@@ -19,23 +19,23 @@ A compact JWS (`header.payload.signature`, base64url, no padding):
   extra header parameter (`jku`, `x5u`, `crit`, …) is rejected.
 - Claims (all required, no extras):
 
-| Claim | Meaning |
-|---|---|
-| `v` | 1 |
-| `iss` | issuing decision service |
-| `aud` | the enforcement point allowed to accept it (e.g. `crm-tool-gateway`) |
-| `jti` | UUID, single use |
-| `tid` | tenant |
-| `sub` | agent id |
-| `prn` | principal the agent acts for |
-| `act` | exact action |
-| `res` | `{type, id}` |
-| `args` | `computeArgumentsDigest(arguments)` or null for argument-less actions |
-| `att` | `computeAttributesDigest(resource.attributes)` exactly as the caller sent them (before server merge) |
-| `dec` | decision id (audit link) |
-| `apr` | approval id consumed to obtain this ALLOW, or null |
-| `pv` | policy version used |
-| `iat`, `nbf`, `exp` | epoch seconds; `exp - iat ≤ 300` (recommended 60) |
+| Claim               | Meaning                                                                                              |
+| ------------------- | ---------------------------------------------------------------------------------------------------- |
+| `v`                 | 1                                                                                                    |
+| `iss`               | issuing decision service                                                                             |
+| `aud`               | the enforcement point allowed to accept it (e.g. `crm-tool-gateway`)                                 |
+| `jti`               | UUID, single use                                                                                     |
+| `tid`               | tenant                                                                                               |
+| `sub`               | agent id                                                                                             |
+| `prn`               | principal the agent acts for                                                                         |
+| `act`               | exact action                                                                                         |
+| `res`               | `{type, id}`                                                                                         |
+| `args`              | `computeArgumentsDigest(arguments)` or null for argument-less actions                                |
+| `att`               | `computeAttributesDigest(resource.attributes)` exactly as the caller sent them (before server merge) |
+| `dec`               | decision id (audit link)                                                                             |
+| `apr`               | approval id consumed to obtain this ALLOW, or null                                                   |
+| `pv`                | policy version used                                                                                  |
+| `iat`, `nbf`, `exp` | epoch seconds; `exp - iat ≤ 300` (recommended 60)                                                    |
 
 Signing input is `b64url(canonicalJson(header)) + "." + b64url(canonicalJson(claims))`, signed with Ed25519.
 

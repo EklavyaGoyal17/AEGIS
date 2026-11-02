@@ -35,37 +35,44 @@ flowchart LR
 ## 3. Product Modules
 
 ### A. Shell & Design System (`src/components/layout/**`, `src/components/ui/**`)
+
 - **Visual Identity**: Tailored dark-mode palette (`surface-0` to `surface-950`) optimized for low-fatigue operations centers.
 - **Environment Indicator**: Unmistakable top banner and sidebar badges contrasting `DEMO MODE` (amber) with `LIVE` (emerald).
 - **Accessibility**: Standard ARIA landmarks (`aside`, `header`, `main`, `dialog`), focus-visible rings, keyboard escape traps on modals, and screen-reader status hints.
 
 ### B. Security Operations Overview (`src/app/(dashboard)/page.tsx`)
+
 - Surfaces key authorization metrics derived from live audit streams.
 - Prioritizes pending approval cards with quick action buttons.
 - Summarizes blocked actions and active security rules.
 
 ### C. Agent Activity Explorer (`src/app/(dashboard)/activity/page.tsx`)
+
 - High-density queryable table of agent tool invocations.
 - Instant client-side and server-side filtering by Agent ID, Outcome (`ALLOW`, `DENY`, `REQUIRE_APPROVAL`), and Correlation ID.
 - Expandable investigation drawer with automatic redaction of sensitive credentials and PII.
 
 ### D. Human Approval Center (`src/app/(dashboard)/approvals/page.tsx`)
+
 - Authoritative human-in-the-loop review station.
 - Shows proposed arguments, target resource, expiration countdown, and policy reasoning codes.
 - Two-step confirmation dialog with mandatory reviewer justification note.
 - Fail-safe state machine: Prevents approving expired or consumed approvals.
 
 ### E. Policy Management (`src/app/(dashboard)/policies/page.tsx`)
+
 - Declarative rule catalog with human-readable condition breakdowns.
 - Structured modal policy builder with strict schema validation.
 - Fail-closed guardrail warnings preventing accidental policy escalation.
 
 ### F. Audit Investigation & Evidence Trail (`src/app/(dashboard)/audit/page.tsx`)
+
 - Chronological event timeline with deep correlation thread lookup.
 - Raw JSON evidence inspector.
 - Clear distinction between system-logged records and cryptographically verified evidence.
 
 ### G. Integrations & Agent SDK (`src/app/(dashboard)/integrations/page.tsx`)
+
 - Reference code patterns for integrating `@aegis/agent-sdk`.
 - Status indicators for Local Gateway and MCP Connector concepts.
 

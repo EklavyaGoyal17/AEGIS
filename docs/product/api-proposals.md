@@ -1,6 +1,6 @@
 # AEGIS — API Proposals & Roadmap for Future Extensions
 
-This document outlines proposed backend endpoints identified during the implementation of the enterprise security console. 
+This document outlines proposed backend endpoints identified during the implementation of the enterprise security console.
 
 > [!IMPORTANT]
 > In accordance with AEGIS engineering principles, these endpoints are **not** assumed to exist in production. The current console UI implements clear separation: in production mode, metrics are derived strictly from canonical `/v1/audit/events` and `/v1/approvals`, while demo mode leverages deterministic fixture simulations.
@@ -10,9 +10,11 @@ This document outlines proposed backend endpoints identified during the implemen
 ## Proposal 1: Agent Inventory Registry (`GET /v1/agents`)
 
 ### Motivation
+
 Enterprise security operators need visibility into all registered AI agents, their runtime environments, trust tiers, and current activity status. Currently, agents are observed reactively through audit events.
 
 ### Proposed Specification
+
 - **Method**: `GET`
 - **Path**: `/v1/agents`
 - **Query Parameters**:
@@ -48,9 +50,11 @@ Enterprise security operators need visibility into all registered AI agents, the
 ## Proposal 2: Aggregated Security Metrics (`GET /v1/metrics/overview`)
 
 ### Motivation
+
 Rather than client-side aggregation over recent audit event pages, an authoritative backend aggregation endpoint avoids excessive payload transfer and gives historical 24h / 7d trends across millions of agent decisions.
 
 ### Proposed Specification
+
 - **Method**: `GET`
 - **Path**: `/v1/metrics/overview`
 - **Query Parameters**:
@@ -83,9 +87,11 @@ Rather than client-side aggregation over recent audit event pages, an authoritat
 ## Proposal 3: Cryptographic Audit Verification (`GET /v1/audit/events/{id}/verify`)
 
 ### Motivation
+
 For compliance and legal investigations, operators need to verify that an audit record has not been tampered with in storage, accompanied by HMAC / Merkle tree inclusion proofs.
 
 ### Proposed Specification
+
 - **Method**: `GET`
 - **Path**: `/v1/audit/events/{eventId}/verify`
 - **Response Schema (`200 OK`)**:

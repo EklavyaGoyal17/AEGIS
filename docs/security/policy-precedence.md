@@ -6,17 +6,17 @@ This document is normative. `@aegis/policy-engine` implements it and its tests r
 
 The engine never sees raw HTTP. The backend builds an `EvaluationInput` from:
 
-| Input | Source | Trusted? |
-|---|---|---|
-| `tenantId` | Verified credential | Yes |
-| `agent` (`AgentIdentity`) | Server registry, looked up by the **authenticated** agent | Yes |
-| `principal` (`Principal`) | Server registry (the principal the agent acts for) | Yes |
-| `grants` (`DelegatedAuthority[]`) | Server-managed grant store | Yes |
-| `environment` (`env.*`) | Server-derived (network zone, MFA freshness, business hours, …) | Yes |
-| `resource.attributes` | Server resource catalog **merged over** caller claims; server-owned keys overwritten | Partially (see §8) |
-| `request.context` | Caller (often model-generated) | **No** |
-| `approval` | Server approval store, looked up by `request.approvalId` within the tenant | Yes |
-| `now` | Server clock (the engine never reads a clock) | Yes |
+| Input                             | Source                                                                               | Trusted?           |
+| --------------------------------- | ------------------------------------------------------------------------------------ | ------------------ |
+| `tenantId`                        | Verified credential                                                                  | Yes                |
+| `agent` (`AgentIdentity`)         | Server registry, looked up by the **authenticated** agent                            | Yes                |
+| `principal` (`Principal`)         | Server registry (the principal the agent acts for)                                   | Yes                |
+| `grants` (`DelegatedAuthority[]`) | Server-managed grant store                                                           | Yes                |
+| `environment` (`env.*`)           | Server-derived (network zone, MFA freshness, business hours, …)                      | Yes                |
+| `resource.attributes`             | Server resource catalog **merged over** caller claims; server-owned keys overwritten | Partially (see §8) |
+| `request.context`                 | Caller (often model-generated)                                                       | **No**             |
+| `approval`                        | Server approval store, looked up by `request.approvalId` within the tenant           | Yes                |
+| `now`                             | Server clock (the engine never reads a clock)                                        | Yes                |
 
 Nothing the model says ("this is safe", "the user approved", `context.approved = true`) can change a decision
 unless a policy author explicitly wrote a rule referencing `request.context.*`. The conflict detector flags any
@@ -85,19 +85,19 @@ Grants never widen policy. A policy ALLOW without a covering grant is DENY.
 
 Approvals cannot override DENY — §5 runs only when rules produced REQUIRE_APPROVAL.
 
-| Situation | Result |
-|---|---|
-| No `approvalId` in request | REQUIRE_APPROVAL `APPROVAL_REQUIRED` (server creates an approval) |
-| `approvalId` given, server found none in this tenant | DENY `APPROVAL_NOT_FOUND` |
-| Approval belongs to another tenant | DENY `APPROVAL_TENANT_MISMATCH` |
-| Binding digest ≠ digest of the current request | DENY `APPROVAL_BINDING_MISMATCH` |
-| Status CONSUMED | DENY `APPROVAL_ALREADY_CONSUMED` |
-| Status REJECTED / CANCELLED | DENY `APPROVAL_REJECTED` |
-| Status PENDING | REQUIRE_APPROVAL `APPROVAL_PENDING` |
-| Status EXPIRED, or `now ≥ expiresAt` | REQUIRE_APPROVAL `APPROVAL_EXPIRED` (a new approval is needed) |
-| Resolved by the requesting principal or the agent | DENY `APPROVAL_SELF_RESOLVED` |
-| Approval's `policyVersion` ≠ current | REQUIRE_APPROVAL `APPROVAL_POLICY_VERSION_CHANGED` |
-| APPROVED, all checks pass | ALLOW `APPROVAL_SATISFIED`; output `consumesApprovalId` |
+| Situation                                            | Result                                                            |
+| ---------------------------------------------------- | ----------------------------------------------------------------- |
+| No `approvalId` in request                           | REQUIRE_APPROVAL `APPROVAL_REQUIRED` (server creates an approval) |
+| `approvalId` given, server found none in this tenant | DENY `APPROVAL_NOT_FOUND`                                         |
+| Approval belongs to another tenant                   | DENY `APPROVAL_TENANT_MISMATCH`                                   |
+| Binding digest ≠ digest of the current request       | DENY `APPROVAL_BINDING_MISMATCH`                                  |
+| Status CONSUMED                                      | DENY `APPROVAL_ALREADY_CONSUMED`                                  |
+| Status REJECTED / CANCELLED                          | DENY `APPROVAL_REJECTED`                                          |
+| Status PENDING                                       | REQUIRE_APPROVAL `APPROVAL_PENDING`                               |
+| Status EXPIRED, or `now ≥ expiresAt`                 | REQUIRE_APPROVAL `APPROVAL_EXPIRED` (a new approval is needed)    |
+| Resolved by the requesting principal or the agent    | DENY `APPROVAL_SELF_RESOLVED`                                     |
+| Approval's `policyVersion` ≠ current                 | REQUIRE_APPROVAL `APPROVAL_POLICY_VERSION_CHANGED`                |
+| APPROVED, all checks pass                            | ALLOW `APPROVAL_SATISFIED`; output `consumesApprovalId`           |
 
 The server MUST transition the approval `APPROVED → CONSUMED` with a compare-and-set in the same transaction
 that records the ALLOW decision. If the CAS fails, the server MUST return DENY (`APPROVAL_ALREADY_CONSUMED`).
@@ -116,11 +116,11 @@ Conditions evaluate to TRUE, FALSE or UNKNOWN (Kleene K3):
 
 **Fail-safe mapping of UNKNOWN to rule applicability:**
 
-| Rule effect | TRUE | FALSE | UNKNOWN |
-|---|---|---|---|
-| ALLOW | applies | no | **no** |
-| DENY | applies | no | **applies** (+ `CONDITION_INDETERMINATE`) |
-| REQUIRE_APPROVAL | applies | no | **applies** (+ `CONDITION_INDETERMINATE`) |
+| Rule effect      | TRUE    | FALSE | UNKNOWN                                   |
+| ---------------- | ------- | ----- | ----------------------------------------- |
+| ALLOW            | applies | no    | **no**                                    |
+| DENY             | applies | no    | **applies** (+ `CONDITION_INDETERMINATE`) |
+| REQUIRE_APPROVAL | applies | no    | **applies** (+ `CONDITION_INDETERMINATE`) |
 
 Restrictive rules fail toward applying; permissive rules fail toward not applying. Authors who want a DENY to
 apply only when an attribute is present must say so with `exists`.

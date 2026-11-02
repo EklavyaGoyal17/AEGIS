@@ -7,11 +7,13 @@ This guide walks through running the AEGIS Security Console, executing the safe 
 ## 1. Quick Start
 
 ### Starting the Security Console
+
 ```bash
 cd apps/console
 npm install
 npm run dev
 ```
+
 Open your browser at **`http://localhost:3100`**.
 
 > [!NOTE]
@@ -22,6 +24,7 @@ Open your browser at **`http://localhost:3100`**.
 ## 2. Running the Protected Demo Agent
 
 In a separate terminal:
+
 ```bash
 cd apps/demo-agent
 npm install
@@ -29,6 +32,7 @@ npm run demo
 ```
 
 The script runs an interactive customer support scenario:
+
 1. **Safe Ticket Ingestion (`ALLOW`)**: Agent retrieves synthetic ticket `tkt-8821`. Gateway returns `ALLOW` under policy `Allow Customer Data Reads`.
 2. **Customer Profile Read (`ALLOW`)**: Agent checks customer tier. Gateway returns `ALLOW`.
 3. **Data Exfiltration Attempt (`DENY`)**: Agent attempts bulk export of `customer-data/pii/*`. Gateway immediately rejects with `DENY` under policy `Block PII Exports`.
@@ -40,14 +44,14 @@ The script runs an interactive customer support scenario:
 
 ## 3. Console Exploration Checklist
 
-| Step | Page | What to Verify |
-| :---: | :--- | :--- |
-| **1** | `/` (Overview) | Verify KPI cards (Pending Approvals, Blocked Actions), Urgent Action Queue, and Audit Stream. |
-| **2** | `/activity` | Filter by Outcome `DENY` to observe intercepted export attempts with redacted PII arguments. |
-| **3** | `/approvals` | Click **"Authorize & Release"** on a pending approval. Provide a reviewer audit justification note and confirm. Notice the card transitions to Approved. |
-| **4** | `/policies` | Click on **"Block PII Exports"** to view human-readable conditions and underlying AST JSON. Click **"New Policy Rule"** to test structured creation. |
-| **5** | `/audit` | Search by correlation ID `c0c0c0c0-0001-4ccc-7777-000000000001` to view the chronological story arc across reads, modifications, and approvals. |
-| **6** | `/integrations` | Inspect the code patterns for `@aegis/agent-sdk` and tool gateway endpoints. |
+| Step  | Page            | What to Verify                                                                                                                                           |
+| :---: | :-------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1** | `/` (Overview)  | Verify KPI cards (Pending Approvals, Blocked Actions), Urgent Action Queue, and Audit Stream.                                                            |
+| **2** | `/activity`     | Filter by Outcome `DENY` to observe intercepted export attempts with redacted PII arguments.                                                             |
+| **3** | `/approvals`    | Click **"Authorize & Release"** on a pending approval. Provide a reviewer audit justification note and confirm. Notice the card transitions to Approved. |
+| **4** | `/policies`     | Click on **"Block PII Exports"** to view human-readable conditions and underlying AST JSON. Click **"New Policy Rule"** to test structured creation.     |
+| **5** | `/audit`        | Search by correlation ID `c0c0c0c0-0001-4ccc-7777-000000000001` to view the chronological story arc across reads, modifications, and approvals.          |
+| **6** | `/integrations` | Inspect the code patterns for `@aegis/agent-sdk` and tool gateway endpoints.                                                                             |
 
 ---
 

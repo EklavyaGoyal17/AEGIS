@@ -26,9 +26,12 @@ test('backend canonical JSON is byte-identical to the contracts canonicalizer', 
 
 test('backend arguments digest equals computeArgumentsDigest', () => {
   fc.assert(
-    fc.property(fc.dictionary(fc.string(), fc.jsonValue({ maxDepth: 2 })), (args) => {
-      expect(argumentsDigest(args)).toBe(computeArgumentsDigest(args));
-    }),
+    fc.property(
+      fc.dictionary(fc.string(), fc.jsonValue({ maxDepth: 2 })),
+      (args) => {
+        expect(argumentsDigest(args)).toBe(computeArgumentsDigest(args));
+      },
+    ),
     { numRuns: 1000 },
   );
 });

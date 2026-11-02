@@ -22,6 +22,7 @@ for builds and through a source alias for tests.
 ## 1. Backend (Codex) — MUST
 
 ### 1.1 Authentication and identity derivation
+
 - Derive `tenantId`, the calling agent or principal, and scopes **only** from the verified bearer token.
 - `POST /v1/decisions/evaluate`: the token must authenticate the agent named in `body.agentId`; otherwise 403
   FORBIDDEN. Never fall back to "trust the body".
@@ -29,6 +30,7 @@ for builds and through a source alias for tests.
 - Resources of another tenant must be indistinguishable from non-existent ones (404, never 403).
 
 ### 1.2 Building the engine input
+
 - Load `AgentIdentity`, `Principal` (the principal the agent acts for — the delegator), all
   `DelegatedAuthority` grants for (tenant, agent), and the tenant's active `PolicySet` from server storage.
 - Overwrite server-owned resource attributes (`sensitivity`, `classification`, `ownerTenantId`, `owner`,
@@ -41,6 +43,7 @@ for builds and through a source alias for tests.
   non-ALLOW as "do not execute".
 
 ### 1.3 Decisions, idempotency and expiry
+
 - `requestId` is an idempotency key scoped to (tenant, agent): replay the stored response for an identical body;
   409 IDEMPOTENCY_CONFLICT for a different body (compare `sha256Digest(body)`).
 - `expiresAt` = `now + decisionTtlSeconds` from the engine output (REQUIRE_APPROVAL: approval expiry).
@@ -48,6 +51,7 @@ for builds and through a source alias for tests.
   validation failures that reached the engine.
 
 ### 1.4 Approvals
+
 - On REQUIRE_APPROVAL: create `ApprovalRequest` with `bindingDigest = computeApprovalBindingDigest(...)` (from
   `@aegis/contracts/crypto`), `policyVersion`, `expiresAt = now + approvalTtlSeconds`.
 - `POST /v1/approvals/{id}/resolve`: require `aegis:approvals:resolve`; reject (409 SELF_APPROVAL_FORBIDDEN)
@@ -59,6 +63,7 @@ for builds and through a source alias for tests.
 - A background job marks PENDING approvals past `expiresAt` as EXPIRED (the engine also checks `now`).
 
 ### 1.5 Execution authorization (for protected tools)
+
 - For actions configured as protected, require `argumentsDigest` in the evaluate request (400 otherwise).
 - On ALLOW, mint with `mintExecutionAuthorization` (Ed25519 key from KMS/HSM, `kid` rotation, lifetime ≤ 60 s
   recommended, ≤ 300 s hard cap) and return it as `executionAuthorization`. Set
@@ -73,6 +78,7 @@ for builds and through a source alias for tests.
 - See `docs/security/execution-authorization.md`.
 
 ### 1.6 Policies
+
 - `POST /v1/policies` requires `aegis:policies:write`. Validate with `compilePolicySet` before storing; reject
   with 400 POLICY_INVALID including the compiler's issues. Tenant comes from the token, never the document.
 - Versions are immutable; activation is a separate state change recorded as `POLICY_ACTIVATED`.
@@ -81,13 +87,15 @@ for builds and through a source alias for tests.
 - Recommended: two-person rule for activation (proposer ≠ activator).
 
 ### 1.7 Audit
+
 - Append-only per tenant, gap-free `sequence`, `previousEventHash` chain, `eventHash =
-  computeAuditEventHash(event)`; serialise appends per tenant (single writer or `SELECT … FOR UPDATE`).
+computeAuditEventHash(event)`; serialise appends per tenant (single writer or `SELECT … FOR UPDATE`).
 - Periodically export the latest `eventHash` to an external anchor (WORM bucket / transparency log) so tail
   truncation is detectable. `verifyAuditChain` validates slices.
 - `payloadDigest` = `sha256Digest(<event payload>)`; never store secrets or raw tool arguments in audit.
 
 ### 1.8 Errors and availability
+
 - Use the `ErrorEnvelope` for every non-2xx; `retryable` true only for RATE_LIMITED / UNAVAILABLE.
 - If the policy store, grant store or approval store is unavailable: 503 UNAVAILABLE. Never ALLOW from cache
   beyond the decision TTL, and never evaluate against an empty policy set as a fallback.
@@ -123,15 +131,15 @@ for builds and through a source alias for tests.
 Security reviewed the backend branch without modifying it. These differ from the frozen v1 contract and need
 backend changes (or a recorded contract revision) before integration. Listed most-severe first.
 
-| # | Backend behaviour | Frozen v1 contract | Risk |
-|---|---|---|---|
-| D1 | `context` / `resource.attributes` accept arbitrary nested JSON (`z.json()`) | Flat scalar/list maps, ≤ 64 keys, key pattern | Unbounded input; nested data reaching policy evaluation. The engine adapter rejects it (`INVALID_INPUT`), so such requests will always DENY. |
-| D2 | Arguments digest taken from `context.arguments` (caller-controlled context) with an undomain-separated hex digest | Top-level `argumentsDigest` = `computeArgumentsDigest(args)` (`sha256:` + domain separation) | Digests computed by the SDK / gateway will not match the backend's. |
-| D3 | Resolve body `{ requestId, action: APPROVE\|REJECT\|CANCEL }` | `{ decision, expectedBindingDigest, comment? }` | Without `expectedBindingDigest` an approver can be shown one request and approve another (TOCTOU). |
-| D4 | Policy write body `{ version, document }` with client-chosen version string | `CreatePolicyRequest` with `policyId`, `expectedLatestVersion`, server-assigned versions | Client-chosen versions can collide or be replayed; no optimistic concurrency. |
-| D5 | `action` regex `^[a-z][a-z0-9_.-]{1,127}$` | Dotted `resource.operation` with 2–5 segments | Single-segment and `..` actions accepted; wildcard matching assumes segments. |
-| D6 | Local `canonical()` accepts `undefined` values / non-plain objects silently | `canonicalJson` rejects them | Two semantically different bodies can hash equal (idempotency, audit). Prefer importing `canonicalJson`/`sha256Digest` from `@aegis/contracts`. |
-| D7 | Approval TTL limited to the decision `ttlSeconds` (≤ 300 s) | Approval TTL 60 s – 7 days, decision TTL ≤ 300 s | Approvals expire before humans can act. The adapter currently clamps to 300 s. |
+| #   | Backend behaviour                                                                                                 | Frozen v1 contract                                                                           | Risk                                                                                                                                            |
+| --- | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| D1  | `context` / `resource.attributes` accept arbitrary nested JSON (`z.json()`)                                       | Flat scalar/list maps, ≤ 64 keys, key pattern                                                | Unbounded input; nested data reaching policy evaluation. The engine adapter rejects it (`INVALID_INPUT`), so such requests will always DENY.    |
+| D2  | Arguments digest taken from `context.arguments` (caller-controlled context) with an undomain-separated hex digest | Top-level `argumentsDigest` = `computeArgumentsDigest(args)` (`sha256:` + domain separation) | Digests computed by the SDK / gateway will not match the backend's.                                                                             |
+| D3  | Resolve body `{ requestId, action: APPROVE\|REJECT\|CANCEL }`                                                     | `{ decision, expectedBindingDigest, comment? }`                                              | Without `expectedBindingDigest` an approver can be shown one request and approve another (TOCTOU).                                              |
+| D4  | Policy write body `{ version, document }` with client-chosen version string                                       | `CreatePolicyRequest` with `policyId`, `expectedLatestVersion`, server-assigned versions     | Client-chosen versions can collide or be replayed; no optimistic concurrency.                                                                   |
+| D5  | `action` regex `^[a-z][a-z0-9_.-]{1,127}$`                                                                        | Dotted `resource.operation` with 2–5 segments                                                | Single-segment and `..` actions accepted; wildcard matching assumes segments.                                                                   |
+| D6  | Local `canonical()` accepts `undefined` values / non-plain objects silently                                       | `canonicalJson` rejects them                                                                 | Two semantically different bodies can hash equal (idempotency, audit). Prefer importing `canonicalJson`/`sha256Digest` from `@aegis/contracts`. |
+| D7  | Approval TTL limited to the decision `ttlSeconds` (≤ 300 s)                                                       | Approval TTL 60 s – 7 days, decision TTL ≤ 300 s                                             | Approvals expire before humans can act. The adapter currently clamps to 300 s.                                                                  |
 
 The adapter `createBackendPolicyEngine` in `@aegis/policy-engine` implements the backend's `PolicyEngine`
 interface as it exists today, so the backend can switch from `UnavailablePolicyEngine` without waiting for

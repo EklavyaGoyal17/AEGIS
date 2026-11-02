@@ -164,7 +164,7 @@ export const HealthResponseSchema = z.object({
   status: z.enum(["healthy", "degraded", "unhealthy"]),
   version: z.string(),
   uptime: z.number(),
-  services: z.record(z.object({
+  services: z.record(z.string(), z.object({
     status: z.enum(["healthy", "degraded", "unhealthy"]),
     latency: z.number().optional(),
   })).optional(),

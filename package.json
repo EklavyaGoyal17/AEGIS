@@ -38,7 +38,8 @@
     "dev:init": "tsx infra/dev-init.ts",
     "dev:seed": "tsx infra/seed.ts",
     "smoke": "tsx infra/smoke.ts",
-    "demo": "npm run demo -w @aegis/demo-agent"
+    "demo": "npm run demo -w @aegis/demo-agent",
+    "probe": "tsx infra/security-probe.ts"
   },
   "dependencies": {
     "@fastify/rate-limit": "^11.2.1",

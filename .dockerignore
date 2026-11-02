@@ -1,7 +1,10 @@
 .git
-node_modules
-dist
+**/node_modules
+**/dist
+**/.next
 coverage
 .backend-tmp
+test-results
+playwright-report
 **/.env*
 **/*.log

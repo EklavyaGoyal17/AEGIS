@@ -1,15 +1,18 @@
 import pg from 'pg';
 import { Authorization } from '../services/api/src/authorization.js';
 import { Store, audit } from '../services/api/src/store.js';
-import { DEMO_POLICY, LocalDemoFixture } from './local-demo-policy.js';
+import { canonicalPolicyEngine } from '../services/api/src/canonical-engine.js';
+import { DEMO_POLICY } from './local-demo-policy.js';
 export const DEMO_TENANT = '10000000-0000-4000-8000-000000000001';
 export const DEMO_MACHINE = '10000000-0000-4000-8000-000000000002';
 export const DEMO_HUMAN = '10000000-0000-4000-8000-000000000003';
 if (
   process.env.NODE_ENV === 'production' ||
-  process.env.ENABLE_LOCAL_DEMO_POLICY !== 'true'
+  process.env.AEGIS_DEV_SEED !== 'true'
 )
-  throw new Error('Developer seed requires explicit nonproduction mode');
+  throw new Error(
+    'Developer seed requires NODE_ENV!=production and AEGIS_DEV_SEED=true',
+  );
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 try {
   const store = new Store(pool);
@@ -65,7 +68,10 @@ try {
       ])
     ).rowCount
   )
-    await new Authorization(store, new LocalDemoFixture()).writePolicy(
+    await new Authorization(
+      store,
+      await canonicalPolicyEngine(store),
+    ).writePolicy(
       human,
       {
         policyId: 'demo-policy',

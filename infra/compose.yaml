@@ -12,7 +12,7 @@ x-backend: &backend
   stop_grace_period: 20s
 x-env: &env
   NODE_ENV: development
-  ENABLE_LOCAL_DEMO_POLICY: 'true'
+  ENABLE_LOCAL_DEMO_POLICY: 'false'
   DATABASE_URL: postgresql://aegis_app:${AEGIS_APP_DB_PASSWORD:?Run npm run dev:init}@postgres:5432/aegis
   JWT_ISSUER: https://identity.aegis.local.invalid
   JWT_AUDIENCE: aegis-local
@@ -51,6 +51,7 @@ services:
     command: [node, dist/infra/seed.js]
     environment:
       <<: *env
+      AEGIS_DEV_SEED: 'true'
       DATABASE_URL: postgresql://aegis_owner:${POSTGRES_PASSWORD}@postgres:5432/aegis
     networks: [control]
     depends_on:

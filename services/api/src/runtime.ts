@@ -29,20 +29,11 @@ export async function startServer(surface: 'api' | 'gateway') {
     process.env.ENABLE_LOCAL_DEMO_POLICY !== 'true' &&
     !process.env.AEGIS_POLICY_ADAPTER_MODULE
   ) {
+    // The canonical engine ships in this repository; failing to load it is a deployment error and
+    // stops startup instead of silently serving an always-deny engine.
     const specifier =
       process.env.AEGIS_CANONICAL_ENGINE_MODULE ?? '@aegis/policy-engine';
-    try {
-      engine = await canonicalPolicyEngine(store, specifier);
-    } catch (error) {
-      if (
-        process.env.AEGIS_CANONICAL_ENGINE_MODULE ||
-        !(error instanceof Error) ||
-        !('code' in error) ||
-        error.code !== 'ERR_MODULE_NOT_FOUND' ||
-        !error.message.includes('@aegis/policy-engine')
-      )
-        throw error;
-    }
+    engine = await canonicalPolicyEngine(store, specifier);
   }
   if (process.env.ENABLE_LOCAL_DEMO_POLICY === 'true') {
     const { LocalDemoFixture } =

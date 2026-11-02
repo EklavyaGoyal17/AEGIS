@@ -1,0 +1,27 @@
+# AEGIS Dependencies & Build
+node_modules/
+.next/
+dist/
+out/
+.env.local
+.env*.local
+*.tsbuildinfo
+next-env.d.ts
+
+# Peer Agent Worktrees & Isolation
+AEGIS-claude/
+AEGIS-codex/
+AEGIS-antigravity/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test
+coverage/
+test-results/
+playwright-report/

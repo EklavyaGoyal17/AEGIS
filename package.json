@@ -1,0 +1,21 @@
+{
+  "name": "aegis",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AEGIS — AI Agent Security Enforcement Platform",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=apps/console",
+    "build": "npm run build --workspace=apps/console",
+    "test": "npm run test --workspace=apps/console",
+    "lint": "npm run lint --workspace=apps/console",
+    "test:e2e": "npx playwright test --config=tests/e2e/playwright.config.ts"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
+

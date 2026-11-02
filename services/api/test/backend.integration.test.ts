@@ -27,6 +27,17 @@ import {
 import { DemoNoteAdapter, Gateway } from '../../gateway/src/gateway.js';
 import { buildDemoTool } from '../../demo-tool/src/app.js';
 
+// In the integrated workspace the canonical engine and contracts are always present; the env vars
+// remain overrides for testing an out-of-tree build.
+const ENGINE_MODULE =
+  process.env.AEGIS_CANONICAL_ENGINE_MODULE ?? '@aegis/policy-engine';
+const CONTRACT_SCHEMA =
+  process.env.AEGIS_CONTRACT_SCHEMA ??
+  new URL(
+    '../../../packages/contracts/schemas/aegis-v1.schema.json',
+    import.meta.url,
+  );
+
 let container: StartedPostgreSqlContainer;
 let pool: pg.Pool;
 let store: Store;
@@ -658,14 +669,14 @@ describe('trusted execution boundary and injected failures', () => {
   });
 });
 
-test.skipIf(!process.env.AEGIS_CONTRACT_SCHEMA)(
+test(
   'public responses conform to Claude canonical JSON Schema',
   async () => {
     const { readFile } = await import('node:fs/promises');
     const { Ajv2020 } = await import('ajv/dist/2020.js');
     const formats = await import('ajv-formats');
     const bundle = JSON.parse(
-      await readFile(process.env.AEGIS_CONTRACT_SCHEMA!, 'utf8'),
+      await readFile(CONTRACT_SCHEMA, 'utf8'),
     );
     const ajv = new Ajv2020({ strict: false, allErrors: true });
     (
@@ -906,14 +917,14 @@ test('gateway recomputes digest from actual arguments', async () => {
   expect(await count('demo_notes')).toBe(0);
 });
 
-test.skipIf(!process.env.AEGIS_CANONICAL_ENGINE_MODULE)(
+test(
   'published canonical engine enforces ALLOW, DENY precedence and approval at the real gateway',
   async () => {
     const { canonicalPolicyEngine } =
       await import('../src/canonical-engine.js');
     const real = await canonicalPolicyEngine(
       store,
-      process.env.AEGIS_CANONICAL_ENGINE_MODULE!,
+      ENGINE_MODULE,
     );
     authorization = new Authorization(store, real);
     gateway = new Gateway(authorization, gateway.adapter);
@@ -970,7 +981,7 @@ test.skipIf(!process.env.AEGIS_CANONICAL_ENGINE_MODULE)(
         [tenant, allowed.policyVersion],
       )
     ).rows[0];
-    const module = await import(process.env.AEGIS_CANONICAL_ENGINE_MODULE!);
+    const module = await import(ENGINE_MODULE);
     expect(module.compilePolicySet(snapshot.document).policyVersion).toBe(
       allowed.policyVersion,
     );
@@ -1012,7 +1023,7 @@ test.skipIf(!process.env.AEGIS_CANONICAL_ENGINE_MODULE)(
   },
 );
 
-test.skipIf(!process.env.AEGIS_CANONICAL_ENGINE_MODULE)(
+test(
   'canonical engine uses server sensitivity and scoped delegation limits',
   async () => {
     const { canonicalPolicyEngine } =
@@ -1021,7 +1032,7 @@ test.skipIf(!process.env.AEGIS_CANONICAL_ENGINE_MODULE)(
       store,
       await canonicalPolicyEngine(
         store,
-        process.env.AEGIS_CANONICAL_ENGINE_MODULE!,
+        ENGINE_MODULE,
       ),
     );
     await app.close();
@@ -1070,7 +1081,7 @@ test.skipIf(!process.env.AEGIS_CANONICAL_ENGINE_MODULE)(
   },
 );
 
-test.skipIf(!process.env.AEGIS_CANONICAL_ENGINE_MODULE)(
+test(
   'canonical context reads reuse the transaction under a small connection pool',
   async () => {
     const { canonicalPolicyEngine } =
@@ -1086,7 +1097,7 @@ test.skipIf(!process.env.AEGIS_CANONICAL_ENGINE_MODULE)(
         smallStore,
         await canonicalPolicyEngine(
           smallStore,
-          process.env.AEGIS_CANONICAL_ENGINE_MODULE!,
+          ENGINE_MODULE,
         ),
       );
       await auth.writePolicy(
@@ -1167,14 +1178,11 @@ test('resolution idempotency key cannot resolve a different approval', async () 
   expect(conflict.json().error.code).toBe('IDEMPOTENCY_CONFLICT');
 });
 
-test.skipIf(!process.env.AEGIS_CANONICAL_ENGINE_MODULE)(
+test(
   'argument, approval and public audit hashes interoperate with canonical crypto primitives',
   async () => {
     const crypto = await import(
-      new URL(
-        '../../contracts/dist/crypto/index.js',
-        process.env.AEGIS_CANONICAL_ENGINE_MODULE!,
-      ).href
+      '@aegis/contracts/crypto'
     );
     const args = { text: 'isolated security test' };
     expect(argumentsDigest(args)).toBe(crypto.computeArgumentsDigest(args));
@@ -1190,7 +1198,7 @@ test.skipIf(!process.env.AEGIS_CANONICAL_ENGINE_MODULE)(
         principalId: machine.id,
         action: body.action,
         resource: body.resource,
-        argumentsDigest: body.argumentsDigest,
+        argumentsDigest: body.argumentsDigest ?? null,
       }),
     );
     await approve(decision.approvalId);
@@ -1227,7 +1235,7 @@ test('cancellation before claiming execution leaves no side effect or durable au
   expect(await count('demo_notes')).toBe(0);
 });
 
-test.skipIf(!process.env.AEGIS_CANONICAL_ENGINE_MODULE)(
+test(
   'invalid canonical policy writes return 400 without persisting a revision',
   async () => {
     const { canonicalPolicyEngine } =
@@ -1236,7 +1244,7 @@ test.skipIf(!process.env.AEGIS_CANONICAL_ENGINE_MODULE)(
       store,
       await canonicalPolicyEngine(
         store,
-        process.env.AEGIS_CANONICAL_ENGINE_MODULE!,
+        ENGINE_MODULE,
       ),
     );
     await app.close();

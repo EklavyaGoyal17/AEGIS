@@ -1,0 +1,48 @@
+name: backend
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm install --global npm@11.8.0
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - uses: actions/checkout@v4
+        with:
+          ref: 74774148633aae841d9351b237c5f7dfe20f9edc
+          path: .backend-tmp/canonical
+      - run: npm --prefix .backend-tmp/canonical/packages/contracts ci
+      - run: npm --prefix .backend-tmp/canonical/packages/contracts run build
+      - run: npm --prefix .backend-tmp/canonical/packages/policy-engine ci
+      - run: npm --prefix .backend-tmp/canonical/packages/policy-engine run build
+      - run: npm run test:integration
+        env:
+          AEGIS_CONTRACT_SCHEMA: .backend-tmp/canonical/packages/contracts/schemas/aegis-v1.schema.json
+          AEGIS_CANONICAL_ENGINE_MODULE: file://${{ github.workspace }}/.backend-tmp/canonical/packages/policy-engine/dist/index.js
+      - run: npm audit --omit=dev --audit-level=moderate
+      - run: npm audit --audit-level=high
+      - run: npm run build
+      - run: npm run dev:init
+      - run: docker compose --env-file .backend-tmp/compose.env -f infra/compose.yaml up --build -d --wait
+      - run: npm run smoke
+      - if: always()
+        run: docker compose --env-file .backend-tmp/compose.env -f infra/compose.yaml down
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

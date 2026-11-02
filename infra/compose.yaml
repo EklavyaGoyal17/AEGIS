@@ -1,0 +1,133 @@
+name: aegis-backend
+x-backend: &backend
+  image: aegis-backend:local
+  build:
+    context: ..
+    dockerfile: infra/Dockerfile
+  read_only: true
+  tmpfs: [/tmp]
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  mem_limit: 512m
+  stop_grace_period: 20s
+x-env: &env
+  NODE_ENV: development
+  ENABLE_LOCAL_DEMO_POLICY: 'true'
+  DATABASE_URL: postgresql://aegis_app:${AEGIS_APP_DB_PASSWORD:?Run npm run dev:init}@postgres:5432/aegis
+  JWT_ISSUER: https://identity.aegis.local.invalid
+  JWT_AUDIENCE: aegis-local
+  JWT_PUBLIC_KEY_FILE: /run/aegis/public.pem
+  CURSOR_SIGNING_KEY: ${CURSOR_SIGNING_KEY:?Run npm run dev:init}
+  HOST: 0.0.0.0
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: aegis
+      POSTGRES_USER: aegis_owner
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run npm run dev:init}
+      AEGIS_APP_DB_PASSWORD: ${AEGIS_APP_DB_PASSWORD:?Run npm run dev:init}
+      AEGIS_DEMO_DB_PASSWORD: ${AEGIS_DEMO_DB_PASSWORD:?Run npm run dev:init}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres-init.sh:/docker-entrypoint-initdb.d/01-aegis.sh:ro
+    networks: [control, tools]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U aegis_owner -d aegis']
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  migrate:
+    <<: *backend
+    command: [node, dist/db/migrate.js]
+    environment:
+      DATABASE_URL: postgresql://aegis_owner:${POSTGRES_PASSWORD}@postgres:5432/aegis
+      GRANT_RUNTIME_ROLE: 'true'
+    networks: [control]
+    depends_on:
+      postgres: { condition: service_healthy }
+  seed:
+    <<: *backend
+    command: [node, dist/infra/seed.js]
+    environment:
+      <<: *env
+      DATABASE_URL: postgresql://aegis_owner:${POSTGRES_PASSWORD}@postgres:5432/aegis
+    networks: [control]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+  api:
+    <<: *backend
+    environment:
+      <<: *env
+      PORT: 3000
+      OTEL_SERVICE_NAME: aegis-api
+    volumes: [../.backend-tmp/dev/public.pem:/run/aegis/public.pem:ro]
+    ports: [127.0.0.1:3000:3000]
+    networks: [edge, control]
+    depends_on:
+      seed: { condition: service_completed_successfully }
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:3000/internal/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  gateway:
+    <<: *backend
+    command: [node, dist/services/gateway/src/main.js]
+    environment:
+      <<: *env
+      PORT: 3001
+      DEMO_TOOL_ORIGIN: http://demo-tool:3002
+      DEMO_TOOL_SECRET: ${DEMO_TOOL_SECRET:?Run npm run dev:init}
+      OTEL_SERVICE_NAME: aegis-gateway
+    volumes: [../.backend-tmp/dev/public.pem:/run/aegis/public.pem:ro]
+    ports: [127.0.0.1:3001:3001]
+    networks: [edge, control, tools]
+    depends_on:
+      seed: { condition: service_completed_successfully }
+      demo-tool: { condition: service_healthy }
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:3001/internal/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  demo-tool:
+    <<: *backend
+    command: [node, dist/services/demo-tool/src/main.js]
+    environment:
+      DATABASE_URL: postgresql://aegis_demo:${AEGIS_DEMO_DB_PASSWORD}@postgres:5432/aegis_demo
+      DEMO_TOOL_SECRET: ${DEMO_TOOL_SECRET}
+      HOST: 0.0.0.0
+      PORT: 3002
+    networks: [tools]
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:3002/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+networks:
+  edge: {}
+  control: { internal: true }
+  tools: { internal: true }
+volumes:
+  postgres-data:

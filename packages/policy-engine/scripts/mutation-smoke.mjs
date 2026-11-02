@@ -4,7 +4,7 @@
 //
 // Usage (from packages/policy-engine): node scripts/mutation-smoke.mjs
 import { spawnSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const packages = fileURLToPath(new URL('../../', import.meta.url));
@@ -45,7 +45,11 @@ const MUTANTS = [
   ['agent-sdk', 'src/enforcement.ts', 'if (call.deriveAttributes) attributesDigest = computeAttributesDigest(call.deriveAttributes(snapshot));', '', 'gateway attribute re-derivation ignored'],
 ];
 
-const vitest = (pkg) => `${packages}${pkg}/node_modules/vitest/vitest.mjs`;
+const vitest = (pkg) => {
+  // Package-local install (standalone) or the hoisted workspace install.
+  const local = `${packages}${pkg}/node_modules/vitest/vitest.mjs`;
+  return existsSync(local) ? local : `${packages}../node_modules/vitest/vitest.mjs`;
+};
 let survivors = 0;
 const results = [];
 

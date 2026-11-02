@@ -1,0 +1,65 @@
+name: ci
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm install --global npm@11.8.0
+      - run: npm ci
+      # Static checks
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run lint -w @aegis/console
+      - run: npm run build:packages
+      - run: npm run typecheck
+      # Unit, contract, property-based and security regression tests
+      - run: npm test
+      - run: npm run test:contracts
+      - run: npm run test:mutation
+      # Database integration tests (Testcontainers, real PostgreSQL, canonical engine)
+      - run: npm run test:integration
+      - run: npm audit --omit=dev --audit-level=moderate
+      - run: npm audit --audit-level=high
+      - run: npm run build
+      - run: npm run build:console
+      # Full stack: migrations, seed, API, gateway, demo tool on the canonical engine
+      - run: npm run dev:init
+      - run: docker compose -p aegis-ci --env-file .backend-tmp/compose.env -f infra/compose.yaml up --build -d --wait
+      - run: npm run smoke
+      - run: npm run probe
+      - run: npx playwright install --with-deps chromium firefox
+      # Browser E2E: explicit demo mode (fixture data) and live mode (real stack)
+      - run: npm run test:e2e
+        env:
+          NEXT_PUBLIC_DEMO_MODE: 'true'
+      - run: npm run test:e2e:live
+      - if: always()
+        run: docker compose -p aegis-ci --env-file .backend-tmp/compose.env -f infra/compose.yaml logs --no-color > compose.log || true
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostics
+          path: |
+            compose.log
+            playwright-report/
+            test-results/
+          retention-days: 7
+      - if: always()
+        run: docker compose -p aegis-ci --env-file .backend-tmp/compose.env -f infra/compose.yaml down -v
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

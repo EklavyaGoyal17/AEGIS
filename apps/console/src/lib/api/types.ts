@@ -16,18 +16,18 @@ export const EvaluationRequestSchema = z.object({
   agentId: z.string().min(1),
   action: z.string().min(1),
   resource: z.string().min(1),
-  context: z.record(z.unknown()).optional(),
-  correlationId: z.string().uuid().optional(),
+  context: z.record(z.string(), z.unknown()).optional(),
+  correlationId: z.guid().optional(),
 });
 export type EvaluationRequest = z.infer<typeof EvaluationRequestSchema>;
 
 // ─── Decision Response ───────────────────────────────────────────
 export const DecisionResponseSchema = z.object({
-  decisionId: z.string().uuid(),
+  decisionId: z.guid(),
   effect: DecisionEffect,
   reasonCodes: z.array(z.string()),
   policyVersion: z.string(),
-  approvalId: z.string().uuid().nullable(),
+  approvalId: z.guid().nullable(),
   expiresAt: z.string().datetime().nullable(),
 });
 export type DecisionResponse = z.infer<typeof DecisionResponseSchema>;
@@ -44,8 +44,8 @@ export const ApprovalStatus = z.enum([
 export type ApprovalStatus = z.infer<typeof ApprovalStatus>;
 
 export const ApprovalSchema = z.object({
-  approvalId: z.string().uuid(),
-  decisionId: z.string().uuid(),
+  approvalId: z.guid(),
+  decisionId: z.guid(),
   agentId: z.string(),
   action: z.string(),
   resource: z.string(),
@@ -56,7 +56,7 @@ export const ApprovalSchema = z.object({
   expiresAt: z.string().datetime(),
   resolvedAt: z.string().datetime().nullable(),
   resolvedBy: z.string().nullable(),
-  context: z.record(z.unknown()).optional(),
+  context: z.record(z.string(), z.unknown()).optional(),
   /** What the approver is shown and must echo back when resolving (v1 contract). */
   bindingDigest: z.string().optional(),
   argumentsDigest: z.string().nullable().optional(),
@@ -75,7 +75,7 @@ export const ApprovalResolveRequestSchema = z.object({
 export type ApprovalResolveRequest = z.infer<typeof ApprovalResolveRequestSchema>;
 
 export const ApprovalResolveResponseSchema = z.object({
-  approvalId: z.string().uuid(),
+  approvalId: z.guid(),
   status: ApprovalStatus,
   resolvedAt: z.string().datetime(),
   resolvedBy: z.string(),
@@ -103,18 +103,18 @@ export const AuditEventTypeSchema = z.enum([
 export type AuditEventType = z.infer<typeof AuditEventTypeSchema>;
 
 export const AuditEventSchema = z.object({
-  eventId: z.string().uuid(),
+  eventId: z.guid(),
   type: AuditEventTypeSchema,
   timestamp: z.string().datetime(),
   agentId: z.string().nullable(),
   action: z.string().nullable(),
   resource: z.string().nullable(),
-  decisionId: z.string().uuid().nullable(),
-  approvalId: z.string().uuid().nullable(),
+  decisionId: z.guid().nullable(),
+  approvalId: z.guid().nullable(),
   effect: DecisionEffect.nullable().optional(),
-  correlationId: z.string().uuid().nullable(),
+  correlationId: z.guid().nullable(),
   policyVersion: z.string().nullable(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
   actorId: z.string().nullable(),
 });
 export type AuditEvent = z.infer<typeof AuditEventSchema>;
@@ -194,7 +194,7 @@ export const ApiErrorSchema = z.object({
   error: z.string(),
   message: z.string(),
   statusCode: z.number(),
-  details: z.record(z.unknown()).optional(),
+  details: z.record(z.string(), z.unknown()).optional(),
 });
 export type ApiError = z.infer<typeof ApiErrorSchema>;
 

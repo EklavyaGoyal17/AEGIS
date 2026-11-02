@@ -20,22 +20,22 @@ import { AuditEventTypeSchema } from "./types";
 const Effect = z.enum(["ALLOW", "DENY", "REQUIRE_APPROVAL"]);
 const Timestamp = z.string().datetime();
 const ResourceKey = z.object({ type: z.string(), id: z.string() });
-const Attributes = z.record(z.unknown());
+const Attributes = z.record(z.string(), z.unknown());
 
 export const WireDecision = z.object({
-  decisionId: z.string().uuid(),
+  decisionId: z.guid(),
   effect: Effect,
   reasonCodes: z.array(z.string()),
   policyVersion: z.string(),
-  approvalId: z.string().uuid().nullable(),
+  approvalId: z.guid().nullable(),
   expiresAt: Timestamp,
 });
 
 export const WireApproval = z.object({
-  approvalId: z.string().uuid(),
+  approvalId: z.guid(),
   tenantId: z.string(),
-  decisionId: z.string().uuid(),
-  requestId: z.string().uuid(),
+  decisionId: z.guid(),
+  requestId: z.guid(),
   agentId: z.string(),
   requestingPrincipalId: z.string(),
   action: z.string(),
@@ -60,15 +60,15 @@ export const WireApproval = z.object({
 });
 
 export const WireAuditEvent = z.object({
-  eventId: z.string().uuid(),
+  eventId: z.guid(),
   tenantId: z.string(),
   sequence: z.number().int(),
   occurredAt: Timestamp,
   type: z.string(),
   actor: z.object({ kind: z.enum(["PRINCIPAL", "AGENT", "SYSTEM"]), id: z.string() }),
-  requestId: z.string().uuid().nullable(),
-  decisionId: z.string().uuid().nullable(),
-  approvalId: z.string().uuid().nullable(),
+  requestId: z.guid().nullable(),
+  decisionId: z.guid().nullable(),
+  approvalId: z.guid().nullable(),
   policyVersion: z.string().nullable(),
   action: z.string().nullable(),
   resource: ResourceKey.nullable(),
@@ -97,7 +97,7 @@ export const WirePolicyVersion = z.object({
   version: z.number().int(),
   state: z.enum(["DRAFT", "ACTIVE", "SUPERSEDED"]),
   documentDigest: z.string(),
-  document: z.object({ rules: z.array(z.record(z.unknown())) }).passthrough(),
+  document: z.object({ rules: z.array(z.record(z.string(), z.unknown())) }).passthrough(),
   createdBy: z.string(),
   createdAt: Timestamp,
 });

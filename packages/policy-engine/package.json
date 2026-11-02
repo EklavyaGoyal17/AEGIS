@@ -25,6 +25,7 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
+    "mutation": "node scripts/mutation-smoke.mjs",
     "check": "npm run typecheck && npm run test"
   },
   "dependencies": {

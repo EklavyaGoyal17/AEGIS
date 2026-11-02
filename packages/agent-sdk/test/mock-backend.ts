@@ -14,7 +14,7 @@ import {
   type EvaluateDecisionResponse,
   type Principal,
 } from '@aegis/contracts';
-import { mintExecutionAuthorization, sha256Digest } from '@aegis/contracts/crypto';
+import { computeAttributesDigest, mintExecutionAuthorization, sha256Digest } from '@aegis/contracts/crypto';
 import { compilePolicySet, evaluate, type CompiledPolicySet, type PolicySet } from '@aegis/policy-engine';
 
 type Caller =
@@ -153,6 +153,7 @@ export function createMockBackend(config: MockBackendConfig) {
           act: req.action,
           res: { type: req.resource.type, id: req.resource.id },
           args: req.argumentsDigest ?? null,
+          att: computeAttributesDigest(req.resource.attributes),
           dec: decisionId,
           apr: approvalId,
           pv: d.policyVersion,

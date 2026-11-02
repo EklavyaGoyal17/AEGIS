@@ -375,6 +375,20 @@ describe('three-valued conditions', () => {
     expect(d).toMatchObject({ effect: 'REQUIRE_APPROVAL', reasonCodes: ['APPROVAL_REQUIRED', 'CONDITION_INDETERMINATE'] });
   });
 
+  it('with only an ALLOW rule, a missing or mistyped attribute yields DEFAULT_DENY', () => {
+    const set = compiled(policySet({
+      p: doc([rule({ id: 'small', effect: 'ALLOW', when: { lte: [{ ref: 'resource.attributes.recordCount' }, { value: 1000 }] } })]),
+    }));
+    expect(evaluate(set, input()).effect).toBe('ALLOW');
+    expect(evaluate(set, input({}, { recordCount: '500' })).reasonCodes).toEqual(['DEFAULT_DENY']);
+    expect(evaluate(set, input({}, { recordCount: [500] })).reasonCodes).toEqual(['DEFAULT_DENY']);
+    expect(evaluate(set, input({}, { recordCount: null })).reasonCodes).toEqual(['DEFAULT_DENY']);
+    const negated = compiled(policySet({
+      p: doc([rule({ id: 'not-big', effect: 'ALLOW', when: { not: { gt: [{ ref: 'resource.attributes.missing' }, { value: 1000 }] } } })]),
+    }));
+    expect(evaluate(negated, input()).reasonCodes).toEqual(['DEFAULT_DENY']);
+  });
+
   it('a missing attribute makes a DENY condition apply (fail-safe)', () => {
     const set = compiled(policySet({
       p: doc([

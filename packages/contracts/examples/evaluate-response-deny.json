@@ -1,0 +1,10 @@
+{
+  "decisionId": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+  "effect": "DENY",
+  "reasonCodes": [
+    "EXPLICIT_DENY"
+  ],
+  "policyVersion": "r7.3f2a9c1b0d4e",
+  "approvalId": null,
+  "expiresAt": "2026-11-02T18:31:00Z"
+}

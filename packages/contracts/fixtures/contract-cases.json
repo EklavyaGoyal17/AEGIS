@@ -1,0 +1,357 @@
+{
+  "description": "Request/response conformance cases for AEGIS API v1. Every server and client implementation MUST accept every case with valid=true and reject every case with valid=false. Consumed by packages/contracts/test and intended for backend integration tests.",
+  "cases": [
+    {
+      "name": "evaluate: minimal valid request",
+      "schema": "EvaluateDecisionRequest",
+      "valid": true,
+      "payload": {
+        "requestId": "0b5f1d2e-8a4c-4e7b-9f61-2d3c4b5a6978",
+        "agentId": "agent-1",
+        "action": "crm.customers.read",
+        "resource": { "type": "crm.customer_table", "id": "customers", "attributes": {} },
+        "context": {}
+      }
+    },
+    {
+      "name": "evaluate: resume with approvalId and argumentsDigest",
+      "schema": "EvaluateDecisionRequest",
+      "valid": true,
+      "payload": {
+        "requestId": "0b5f1d2e-8a4c-4e7b-9f61-2d3c4b5a6979",
+        "agentId": "agent-1",
+        "action": "crm.customers.export",
+        "resource": { "type": "crm.customer_table", "id": "customers", "attributes": { "recordCount": 15000, "tags": ["pii", "eu"] } },
+        "context": { "conversationId": "c-1", "retry": false, "score": 0.5, "note": null },
+        "argumentsDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "approvalId": "3c9a4f1e-2b7d-4e8a-9c6f-1d2e3f4a5b6c"
+      }
+    },
+    {
+      "name": "evaluate: caller-asserted tenantId is rejected",
+      "schema": "EvaluateDecisionRequest",
+      "valid": false,
+      "payload": {
+        "requestId": "0b5f1d2e-8a4c-4e7b-9f61-2d3c4b5a6978",
+        "tenantId": "tnt_other",
+        "agentId": "agent-1",
+        "action": "crm.customers.read",
+        "resource": { "type": "crm.customer_table", "id": "customers", "attributes": {} },
+        "context": {}
+      }
+    },
+    {
+      "name": "evaluate: caller-asserted roles/permissions are rejected",
+      "schema": "EvaluateDecisionRequest",
+      "valid": false,
+      "payload": {
+        "requestId": "0b5f1d2e-8a4c-4e7b-9f61-2d3c4b5a6978",
+        "agentId": "agent-1",
+        "action": "crm.customers.read",
+        "resource": { "type": "crm.customer_table", "id": "customers", "attributes": {} },
+        "context": {},
+        "permissions": ["*"]
+      }
+    },
+    {
+      "name": "evaluate: uppercase UUID is not canonical",
+      "schema": "EvaluateDecisionRequest",
+      "valid": false,
+      "payload": {
+        "requestId": "0B5F1D2E-8A4C-4E7B-9F61-2D3C4B5A6978",
+        "agentId": "agent-1",
+        "action": "crm.customers.read",
+        "resource": { "type": "crm.customer_table", "id": "customers", "attributes": {} },
+        "context": {}
+      }
+    },
+    {
+      "name": "evaluate: single-segment action",
+      "schema": "EvaluateDecisionRequest",
+      "valid": false,
+      "payload": {
+        "requestId": "0b5f1d2e-8a4c-4e7b-9f61-2d3c4b5a6978",
+        "agentId": "agent-1",
+        "action": "export",
+        "resource": { "type": "crm.customer_table", "id": "customers", "attributes": {} },
+        "context": {}
+      }
+    },
+    {
+      "name": "evaluate: wildcard is not a valid concrete action",
+      "schema": "EvaluateDecisionRequest",
+      "valid": false,
+      "payload": {
+        "requestId": "0b5f1d2e-8a4c-4e7b-9f61-2d3c4b5a6978",
+        "agentId": "agent-1",
+        "action": "crm.*",
+        "resource": { "type": "crm.customer_table", "id": "customers", "attributes": {} },
+        "context": {}
+      }
+    },
+    {
+      "name": "evaluate: nested object in context",
+      "schema": "EvaluateDecisionRequest",
+      "valid": false,
+      "payload": {
+        "requestId": "0b5f1d2e-8a4c-4e7b-9f61-2d3c4b5a6978",
+        "agentId": "agent-1",
+        "action": "crm.customers.read",
+        "resource": { "type": "crm.customer_table", "id": "customers", "attributes": {} },
+        "context": { "approval": { "approved": true } }
+      }
+    },
+    {
+      "name": "evaluate: prototype-pollution key in context",
+      "schema": "EvaluateDecisionRequest",
+      "valid": false,
+      "payload": {
+        "requestId": "0b5f1d2e-8a4c-4e7b-9f61-2d3c4b5a6978",
+        "agentId": "agent-1",
+        "action": "crm.customers.read",
+        "resource": { "type": "crm.customer_table", "id": "customers", "attributes": {} },
+        "context": { "__proto__": "x" }
+      }
+    },
+    {
+      "name": "evaluate: dotted attribute key",
+      "schema": "EvaluateDecisionRequest",
+      "valid": false,
+      "payload": {
+        "requestId": "0b5f1d2e-8a4c-4e7b-9f61-2d3c4b5a6978",
+        "agentId": "agent-1",
+        "action": "crm.customers.read",
+        "resource": { "type": "crm.customer_table", "id": "customers", "attributes": { "a.b": 1 } },
+        "context": {}
+      }
+    },
+    {
+      "name": "evaluate: control character in resource id",
+      "schema": "EvaluateDecisionRequest",
+      "valid": false,
+      "payload": {
+        "requestId": "0b5f1d2e-8a4c-4e7b-9f61-2d3c4b5a6978",
+        "agentId": "agent-1",
+        "action": "crm.customers.read",
+        "resource": { "type": "crm.customer_table", "id": "cust\u0000omers", "attributes": {} },
+        "context": {}
+      }
+    },
+    {
+      "name": "evaluate: unknown field inside resource",
+      "schema": "EvaluateDecisionRequest",
+      "valid": false,
+      "payload": {
+        "requestId": "0b5f1d2e-8a4c-4e7b-9f61-2d3c4b5a6978",
+        "agentId": "agent-1",
+        "action": "crm.customers.read",
+        "resource": { "type": "crm.customer_table", "id": "customers", "attributes": {}, "owner": "tnt_other" },
+        "context": {}
+      }
+    },
+    {
+      "name": "evaluate: missing context",
+      "schema": "EvaluateDecisionRequest",
+      "valid": false,
+      "payload": {
+        "requestId": "0b5f1d2e-8a4c-4e7b-9f61-2d3c4b5a6978",
+        "agentId": "agent-1",
+        "action": "crm.customers.read",
+        "resource": { "type": "crm.customer_table", "id": "customers", "attributes": {} }
+      }
+    },
+    {
+      "name": "evaluate: malformed argumentsDigest",
+      "schema": "EvaluateDecisionRequest",
+      "valid": false,
+      "payload": {
+        "requestId": "0b5f1d2e-8a4c-4e7b-9f61-2d3c4b5a6978",
+        "agentId": "agent-1",
+        "action": "crm.customers.read",
+        "resource": { "type": "crm.customer_table", "id": "customers", "attributes": {} },
+        "context": {},
+        "argumentsDigest": "md5:abc"
+      }
+    },
+    {
+      "name": "evaluate: agentId with whitespace",
+      "schema": "EvaluateDecisionRequest",
+      "valid": false,
+      "payload": {
+        "requestId": "0b5f1d2e-8a4c-4e7b-9f61-2d3c4b5a6978",
+        "agentId": "agent 1",
+        "action": "crm.customers.read",
+        "resource": { "type": "crm.customer_table", "id": "customers", "attributes": {} },
+        "context": {}
+      }
+    },
+    {
+      "name": "response: expiresAt with non-UTC offset",
+      "schema": "EvaluateDecisionResponse",
+      "valid": false,
+      "payload": {
+        "decisionId": "0b5f1d2e-8a4c-4e7b-9f61-2d3c4b5a6978",
+        "effect": "ALLOW",
+        "reasonCodes": ["POLICY_ALLOW"],
+        "policyVersion": "r1.abc",
+        "approvalId": null,
+        "expiresAt": "2026-11-02T18:30:00+05:30"
+      }
+    },
+    {
+      "name": "response: impossible calendar date",
+      "schema": "EvaluateDecisionResponse",
+      "valid": false,
+      "payload": {
+        "decisionId": "0b5f1d2e-8a4c-4e7b-9f61-2d3c4b5a6978",
+        "effect": "ALLOW",
+        "reasonCodes": [],
+        "policyVersion": "r1.abc",
+        "approvalId": null,
+        "expiresAt": "2026-02-30T00:00:00Z"
+      }
+    },
+    {
+      "name": "response: unknown effect",
+      "schema": "EvaluateDecisionResponse",
+      "valid": false,
+      "payload": {
+        "decisionId": "0b5f1d2e-8a4c-4e7b-9f61-2d3c4b5a6978",
+        "effect": "MAYBE",
+        "reasonCodes": [],
+        "policyVersion": "r1.abc",
+        "approvalId": null,
+        "expiresAt": "2026-11-02T18:30:00Z"
+      }
+    },
+    {
+      "name": "response: unknown response fields are tolerated (forward compatibility)",
+      "schema": "EvaluateDecisionResponse",
+      "valid": true,
+      "payload": {
+        "decisionId": "0b5f1d2e-8a4c-4e7b-9f61-2d3c4b5a6978",
+        "effect": "DENY",
+        "reasonCodes": ["SOME_FUTURE_REASON"],
+        "policyVersion": "r1.abc",
+        "approvalId": null,
+        "expiresAt": "2026-11-02T18:30:00.123Z",
+        "futureField": { "x": 1 }
+      }
+    },
+    {
+      "name": "resolve: approver identity cannot be asserted in the body",
+      "schema": "ResolveApprovalRequest",
+      "valid": false,
+      "payload": {
+        "decision": "APPROVE",
+        "expectedBindingDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "resolvedBy": "usr_admin"
+      }
+    },
+    {
+      "name": "resolve: binding digest is mandatory",
+      "schema": "ResolveApprovalRequest",
+      "valid": false,
+      "payload": { "decision": "APPROVE" }
+    },
+    {
+      "name": "policy: tenantId inside the document is rejected",
+      "schema": "PolicyDocument",
+      "valid": false,
+      "payload": {
+        "schemaVersion": "aegis.policy/v1",
+        "tenantId": "tnt_other",
+        "rules": [{ "id": "r1", "effect": "ALLOW", "actions": ["crm.customers.read"], "resourceTypes": ["*"] }]
+      }
+    },
+    {
+      "name": "policy: arbitrary expression operator is rejected",
+      "schema": "PolicyDocument",
+      "valid": false,
+      "payload": {
+        "schemaVersion": "aegis.policy/v1",
+        "rules": [{ "id": "r1", "effect": "ALLOW", "actions": ["crm.customers.read"], "resourceTypes": ["*"], "when": { "js": "return true" } }]
+      }
+    },
+    {
+      "name": "policy: regex operator is not supported",
+      "schema": "PolicyDocument",
+      "valid": false,
+      "payload": {
+        "schemaVersion": "aegis.policy/v1",
+        "rules": [{ "id": "r1", "effect": "ALLOW", "actions": ["crm.customers.read"], "resourceTypes": ["*"], "when": { "matches": [{ "ref": "resource.id" }, "^(a+)+$"] } }]
+      }
+    },
+    {
+      "name": "policy: reference to an unknown attribute root",
+      "schema": "PolicyDocument",
+      "valid": false,
+      "payload": {
+        "schemaVersion": "aegis.policy/v1",
+        "rules": [{ "id": "r1", "effect": "ALLOW", "actions": ["crm.customers.read"], "resourceTypes": ["*"], "when": { "exists": "secrets.apiKey" } }]
+      }
+    },
+    {
+      "name": "policy: mid-string wildcard in action pattern",
+      "schema": "PolicyDocument",
+      "valid": false,
+      "payload": {
+        "schemaVersion": "aegis.policy/v1",
+        "rules": [{ "id": "r1", "effect": "ALLOW", "actions": ["crm.*.export"], "resourceTypes": ["*"] }]
+      }
+    },
+    {
+      "name": "policy: unknown schemaVersion",
+      "schema": "PolicyDocument",
+      "valid": false,
+      "payload": {
+        "schemaVersion": "aegis.policy/v2",
+        "rules": [{ "id": "r1", "effect": "ALLOW", "actions": ["crm.customers.read"], "resourceTypes": ["*"] }]
+      }
+    },
+    {
+      "name": "policy: empty rule list",
+      "schema": "PolicyDocument",
+      "valid": false,
+      "payload": { "schemaVersion": "aegis.policy/v1", "rules": [] }
+    },
+    {
+      "name": "policy: valid document with time window and nested conditions",
+      "schema": "PolicyDocument",
+      "valid": true,
+      "payload": {
+        "schemaVersion": "aegis.policy/v1",
+        "rules": [
+          {
+            "id": "allow-business-hours",
+            "effect": "ALLOW",
+            "actions": ["crm.*"],
+            "resourceTypes": ["crm.customer_table"],
+            "sensitivity": { "max": "confidential" },
+            "timeWindows": [{ "days": ["MON", "TUE", "WED", "THU", "FRI"], "start": "09:00", "end": "17:30", "utcOffset": "+05:30" }],
+            "when": { "all": [{ "not": { "in": [{ "ref": "env.networkZone" }, { "values": ["untrusted", "unknown"] }] } }, { "startsWith": [{ "ref": "resource.id" }, "cust"] }] }
+          }
+        ]
+      }
+    },
+    {
+      "name": "create policy: tenantId cannot be supplied",
+      "schema": "CreatePolicyRequest",
+      "valid": false,
+      "payload": {
+        "policyId": "p1",
+        "tenantId": "tnt_other",
+        "name": "x",
+        "document": { "schemaVersion": "aegis.policy/v1", "rules": [{ "id": "r1", "effect": "DENY", "actions": ["*"], "resourceTypes": ["*"] }] },
+        "activate": false,
+        "expectedLatestVersion": null
+      }
+    },
+    {
+      "name": "error envelope: retryable flag is mandatory",
+      "schema": "ErrorEnvelope",
+      "valid": false,
+      "payload": { "error": { "code": "UNAVAILABLE", "message": "x", "correlationId": "c" } }
+    }
+  ]
+}

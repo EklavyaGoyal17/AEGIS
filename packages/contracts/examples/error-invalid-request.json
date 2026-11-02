@@ -1,0 +1,14 @@
+{
+  "error": {
+    "code": "INVALID_REQUEST",
+    "message": "Request body failed validation.",
+    "correlationId": "corr-77aa01",
+    "retryable": false,
+    "details": [
+      {
+        "field": "/context/nested",
+        "issue": "must be a scalar or list of scalars"
+      }
+    ]
+  }
+}

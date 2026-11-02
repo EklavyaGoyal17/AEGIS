@@ -1,0 +1,5 @@
+{
+  "decision": "APPROVE",
+  "expectedBindingDigest": "sha256:c1eded6a6ea542660a9ef90aa350480b3c388ac640bfb17641c15a20079120ee",
+  "comment": "Quarterly partner reconciliation, ticket FIN-2231."
+}

@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Credential is not bound to agentId.",
+    "correlationId": "corr-5b1e9a",
+    "retryable": false
+  }
+}

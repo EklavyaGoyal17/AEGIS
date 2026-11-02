@@ -1,0 +1,29 @@
+{
+  "decisionId": "7b6a5948-3726-4154-a3b2-c1d0e9f8a7b6",
+  "effect": "ALLOW",
+  "reasonCodes": [
+    "POLICY_ALLOW",
+    "APPROVAL_SATISFIED"
+  ],
+  "policyVersion": "r7.3f2a9c1b0d4e",
+  "approvalId": "3c9a4f1e-2b7d-4e8a-9c6f-1d2e3f4a5b6c",
+  "expiresAt": "2026-11-02T18:36:00Z",
+  "executionAuthorization": {
+    "token": "eyJhbGciOiJFZERTQSIsImtpZCI6ImVhLWtleS0yMDI2LTExIiwidHlwIjoiYWVnaXMtZWErand0In0.EXAMPLE-PAYLOAD.EXAMPLE-SIGNATURE",
+    "tokenType": "aegis-ea+jwt",
+    "singleUse": true,
+    "expiresAt": "2026-11-02T18:36:00Z",
+    "bindings": {
+      "agentId": "agent-crm-assistant",
+      "action": "crm.customers.export",
+      "resource": {
+        "type": "crm.customer_table",
+        "id": "customers"
+      },
+      "argumentsDigest": "sha256:026b8ce02270651a1852973c791e7d254971874165cd31e0ba20702ca4466d64",
+      "decisionId": "7b6a5948-3726-4154-a3b2-c1d0e9f8a7b6",
+      "approvalId": "3c9a4f1e-2b7d-4e8a-9c6f-1d2e3f4a5b6c",
+      "audience": "crm-tool-gateway"
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "UNAVAILABLE",
+    "message": "Policy store unavailable.",
+    "correlationId": "corr-0f0f0f",
+    "retryable": true
+  }
+}

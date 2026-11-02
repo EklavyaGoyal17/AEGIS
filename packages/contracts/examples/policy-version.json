@@ -1,0 +1,160 @@
+{
+  "policyId": "data-export-controls",
+  "tenantId": "tnt_acme",
+  "version": 7,
+  "state": "ACTIVE",
+  "documentDigest": "sha256:a94eb40572bc2a8e0b28aff51c14e63e29d8e605e41f5b607acd3e92776ef443",
+  "document": {
+    "schemaVersion": "aegis.policy/v1",
+    "actionCatalog": [
+      "crm.customers.read",
+      "crm.customers.export",
+      "crm.customers.delete"
+    ],
+    "decisionTtlSeconds": 60,
+    "rules": [
+      {
+        "id": "allow-crm-read",
+        "effect": "ALLOW",
+        "actions": [
+          "crm.customers.read"
+        ],
+        "resourceTypes": [
+          "crm.customer_table"
+        ],
+        "sensitivity": {
+          "max": "confidential"
+        }
+      },
+      {
+        "id": "allow-small-internal-export",
+        "effect": "ALLOW",
+        "actions": [
+          "crm.customers.export"
+        ],
+        "resourceTypes": [
+          "crm.customer_table"
+        ],
+        "when": {
+          "all": [
+            {
+              "lte": [
+                {
+                  "ref": "resource.attributes.recordCount"
+                },
+                {
+                  "value": 1000
+                }
+              ]
+            },
+            {
+              "eq": [
+                {
+                  "ref": "resource.attributes.destination"
+                },
+                {
+                  "value": "internal"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": "require-approval-bulk-export",
+        "description": "Bulk or external exports need a human approver.",
+        "effect": "REQUIRE_APPROVAL",
+        "actions": [
+          "crm.customers.export"
+        ],
+        "resourceTypes": [
+          "crm.customer_table"
+        ],
+        "when": {
+          "any": [
+            {
+              "gt": [
+                {
+                  "ref": "resource.attributes.recordCount"
+                },
+                {
+                  "value": 1000
+                }
+              ]
+            },
+            {
+              "ne": [
+                {
+                  "ref": "resource.attributes.destination"
+                },
+                {
+                  "value": "internal"
+                }
+              ]
+            }
+          ]
+        },
+        "approval": {
+          "ttlSeconds": 3600
+        }
+      },
+      {
+        "id": "deny-restricted-export",
+        "effect": "DENY",
+        "actions": [
+          "crm.customers.export"
+        ],
+        "resourceTypes": [
+          "*"
+        ],
+        "sensitivity": {
+          "min": "restricted"
+        }
+      },
+      {
+        "id": "deny-delete-outside-business-hours",
+        "effect": "DENY",
+        "actions": [
+          "crm.customers.delete"
+        ],
+        "resourceTypes": [
+          "*"
+        ],
+        "when": {
+          "not": {
+            "eq": [
+              {
+                "ref": "env.businessHours"
+              },
+              {
+                "value": true
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "deny-untrusted-network",
+        "effect": "DENY",
+        "actions": [
+          "*"
+        ],
+        "resourceTypes": [
+          "*"
+        ],
+        "when": {
+          "eq": [
+            {
+              "ref": "env.networkZone"
+            },
+            {
+              "value": "untrusted"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "createdBy": "usr_carol_admin",
+  "createdAt": "2026-11-02T17:00:00Z"
+}

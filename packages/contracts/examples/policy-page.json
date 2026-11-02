@@ -1,0 +1,16 @@
+{
+  "items": [
+    {
+      "policyId": "data-export-controls",
+      "tenantId": "tnt_acme",
+      "name": "Data export controls",
+      "description": "Guards bulk and external customer-data exports.",
+      "activeVersion": 7,
+      "latestVersion": 7,
+      "tenantPolicyVersion": "r7.3f2a9c1b0d4e",
+      "createdAt": "2026-10-01T09:00:00Z",
+      "updatedAt": "2026-11-02T17:00:00Z"
+    }
+  ],
+  "nextCursor": null
+}

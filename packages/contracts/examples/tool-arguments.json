@@ -1,0 +1,5 @@
+{
+  "table": "customers",
+  "destination": "s3://partner-bucket/export.csv",
+  "limit": 15000
+}

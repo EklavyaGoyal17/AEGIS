@@ -1,0 +1,10 @@
+{
+  "decisionId": "9e8d7c6b-5a49-4382-b716-0f1e2d3c4b5a",
+  "effect": "REQUIRE_APPROVAL",
+  "reasonCodes": [
+    "APPROVAL_REQUIRED"
+  ],
+  "policyVersion": "r7.3f2a9c1b0d4e",
+  "approvalId": "3c9a4f1e-2b7d-4e8a-9c6f-1d2e3f4a5b6c",
+  "expiresAt": "2026-11-02T19:30:00Z"
+}

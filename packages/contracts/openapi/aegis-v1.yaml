@@ -1,0 +1,2305 @@
+# GENERATED FILE - DO NOT EDIT. Source: packages/contracts/src. Regenerate: npm run generate
+openapi: 3.1.0
+jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
+info:
+  title: AEGIS Authorization API
+  version: 1.0.0
+  description: |-
+    AEGIS authorizes actions requested by autonomous AI agents independently of the model's own judgment.
+
+    Trust model: tenant, principal and effective permissions are derived ONLY from the verified credential and
+    server-managed grants. Request bodies never carry authoritative tenant identity, roles or permissions.
+    A decision is not an execution credential. Protected tools must be invoked through a trusted enforcement
+    point that verifies a single-use ExecutionAuthorization.
+
+    Compatibility: v1 is frozen. Additive changes (new optional request fields, new response fields, new
+    reason codes, new error codes) may appear in 1.x. Servers MUST reject unknown request fields; clients MUST
+    ignore unknown response fields and treat unknown reason/error codes as opaque and non-retryable.
+
+    Generated from packages/contracts/src — do not edit by hand.
+servers:
+  - url: https://{host}
+    variables:
+      host:
+        default: aegis.example.invalid
+security:
+  - bearerAuth: []
+tags:
+  - name: decisions
+  - name: approvals
+  - name: audit
+  - name: policies
+  - name: health
+paths:
+  /v1/decisions/evaluate:
+    post:
+      tags:
+        - decisions
+      operationId: evaluateDecision
+      summary: Evaluate whether an agent may perform an action on a resource.
+      description: "Idempotent by requestId. The authenticated credential MUST belong to body.agentId (else 403). Fails closed: any internal error produces 5xx or DENY, never ALLOW."
+      x-aegis-required-scopes:
+        - aegis:decisions:evaluate
+      x-aegis-idempotency: requestId
+      parameters:
+        - $ref: "#/components/parameters/CorrelationIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EvaluateDecisionRequest"
+            examples:
+              evaluate-request:
+                value:
+                  requestId: 6f1c2a3b-4d5e-4f60-8a71-9b8c7d6e5f40
+                  agentId: agent-crm-assistant
+                  action: crm.customers.export
+                  resource:
+                    type: crm.customer_table
+                    id: customers
+                    attributes:
+                      recordCount: 15000
+                      destination: external
+                      sensitivity: confidential
+                  context:
+                    conversationId: conv-8812
+                    modelClaim: User asked for this; it is safe
+                  argumentsDigest: sha256:026b8ce02270651a1852973c791e7d254971874165cd31e0ba20702ca4466d64
+      responses:
+        "200":
+          description: Decision produced (ALLOW, DENY or REQUIRE_APPROVAL). DENY is a 200, not an error.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvaluateDecisionResponse"
+              examples:
+                evaluate-response-allow:
+                  value:
+                    decisionId: 7b6a5948-3726-4154-a3b2-c1d0e9f8a7b6
+                    effect: ALLOW
+                    reasonCodes:
+                      - POLICY_ALLOW
+                      - APPROVAL_SATISFIED
+                    policyVersion: r7.3f2a9c1b0d4e
+                    approvalId: 3c9a4f1e-2b7d-4e8a-9c6f-1d2e3f4a5b6c
+                    expiresAt: 2026-11-02T18:36:00Z
+                    executionAuthorization:
+                      token: eyJhbGciOiJFZERTQSIsImtpZCI6ImVhLWtleS0yMDI2LTExIiwidHlwIjoiYWVnaXMtZWErand0In0.EXAMPLE-PAYLOAD.EXAMPLE-SIGNATURE
+                      tokenType: aegis-ea+jwt
+                      singleUse: true
+                      expiresAt: 2026-11-02T18:36:00Z
+                      bindings:
+                        agentId: agent-crm-assistant
+                        action: crm.customers.export
+                        resource:
+                          type: crm.customer_table
+                          id: customers
+                        argumentsDigest: sha256:026b8ce02270651a1852973c791e7d254971874165cd31e0ba20702ca4466d64
+                        decisionId: 7b6a5948-3726-4154-a3b2-c1d0e9f8a7b6
+                        approvalId: 3c9a4f1e-2b7d-4e8a-9c6f-1d2e3f4a5b6c
+                        audience: crm-tool-gateway
+                evaluate-response-deny:
+                  value:
+                    decisionId: 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d
+                    effect: DENY
+                    reasonCodes:
+                      - EXPLICIT_DENY
+                    policyVersion: r7.3f2a9c1b0d4e
+                    approvalId: null
+                    expiresAt: 2026-11-02T18:31:00Z
+                evaluate-response-require-approval:
+                  value:
+                    decisionId: 9e8d7c6b-5a49-4382-b716-0f1e2d3c4b5a
+                    effect: REQUIRE_APPROVAL
+                    reasonCodes:
+                      - APPROVAL_REQUIRED
+                    policyVersion: r7.3f2a9c1b0d4e
+                    approvalId: 3c9a4f1e-2b7d-4e8a-9c6f-1d2e3f4a5b6c
+                    expiresAt: 2026-11-02T19:30:00Z
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: "IDEMPOTENCY_CONFLICT: requestId reused with a different body."
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "413":
+          description: PAYLOAD_TOO_LARGE
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /v1/approvals:
+    get:
+      tags:
+        - approvals
+      operationId: listApprovals
+      summary: List approval requests in the caller's tenant.
+      x-aegis-required-scopes:
+        - aegis:approvals:read
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: Filter by status.
+          schema:
+            $ref: "#/components/schemas/ApprovalStatus"
+        - name: agentId
+          in: query
+          required: false
+          description: Filter by agent.
+          schema:
+            $ref: "#/components/schemas/AgentId"
+        - name: limit
+          in: query
+          required: false
+          description: Page size.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque cursor from a previous page.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 512
+        - $ref: "#/components/parameters/CorrelationIdHeader"
+      responses:
+        "200":
+          description: A page of approvals.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApprovalPage"
+              examples:
+                approval-page:
+                  value:
+                    items:
+                      - approvalId: 3c9a4f1e-2b7d-4e8a-9c6f-1d2e3f4a5b6c
+                        tenantId: tnt_acme
+                        decisionId: 9e8d7c6b-5a49-4382-b716-0f1e2d3c4b5a
+                        requestId: 6f1c2a3b-4d5e-4f60-8a71-9b8c7d6e5f40
+                        agentId: agent-crm-assistant
+                        requestingPrincipalId: usr_alice
+                        action: crm.customers.export
+                        resource:
+                          type: crm.customer_table
+                          id: customers
+                          attributes:
+                            recordCount: 15000
+                            destination: external
+                            sensitivity: confidential
+                        argumentsDigest: sha256:026b8ce02270651a1852973c791e7d254971874165cd31e0ba20702ca4466d64
+                        bindingDigest: sha256:c1eded6a6ea542660a9ef90aa350480b3c388ac640bfb17641c15a20079120ee
+                        policyVersion: r7.3f2a9c1b0d4e
+                        matchedRuleIds:
+                          - data-export-controls/require-approval-bulk-export
+                        reasonCodes:
+                          - APPROVAL_REQUIRED
+                        status: PENDING
+                        createdAt: 2026-11-02T18:30:00Z
+                        expiresAt: 2026-11-02T19:30:00Z
+                        resolution: null
+                    nextCursor: null
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /v1/approvals/{approvalId}/resolve:
+    post:
+      tags:
+        - approvals
+      operationId: resolveApproval
+      summary: Approve or reject a pending approval.
+      description: Only a principal with aegis:approvals:resolve in the same tenant, who is neither the requesting principal nor the agent, may resolve. Resolution is a compare-and-set on PENDING; expectedBindingDigest must match.
+      x-aegis-required-scopes:
+        - aegis:approvals:resolve
+      parameters:
+        - name: approvalId
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/Uuid"
+        - $ref: "#/components/parameters/IdempotencyKeyHeader"
+        - $ref: "#/components/parameters/CorrelationIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResolveApprovalRequest"
+            examples:
+              resolve-approval-request:
+                value:
+                  decision: APPROVE
+                  expectedBindingDigest: sha256:c1eded6a6ea542660a9ef90aa350480b3c388ac640bfb17641c15a20079120ee
+                  comment: Quarterly partner reconciliation, ticket FIN-2231.
+      responses:
+        "200":
+          description: Updated approval.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApprovalRequest"
+              examples:
+                approval-request-approved:
+                  value:
+                    approvalId: 3c9a4f1e-2b7d-4e8a-9c6f-1d2e3f4a5b6c
+                    tenantId: tnt_acme
+                    decisionId: 9e8d7c6b-5a49-4382-b716-0f1e2d3c4b5a
+                    requestId: 6f1c2a3b-4d5e-4f60-8a71-9b8c7d6e5f40
+                    agentId: agent-crm-assistant
+                    requestingPrincipalId: usr_alice
+                    action: crm.customers.export
+                    resource:
+                      type: crm.customer_table
+                      id: customers
+                      attributes:
+                        recordCount: 15000
+                        destination: external
+                        sensitivity: confidential
+                    argumentsDigest: sha256:026b8ce02270651a1852973c791e7d254971874165cd31e0ba20702ca4466d64
+                    bindingDigest: sha256:c1eded6a6ea542660a9ef90aa350480b3c388ac640bfb17641c15a20079120ee
+                    policyVersion: r7.3f2a9c1b0d4e
+                    matchedRuleIds:
+                      - data-export-controls/require-approval-bulk-export
+                    reasonCodes:
+                      - APPROVAL_REQUIRED
+                    status: APPROVED
+                    createdAt: 2026-11-02T18:30:00Z
+                    expiresAt: 2026-11-02T19:30:00Z
+                    resolution:
+                      decision: APPROVE
+                      resolvedBy: usr_bob_security
+                      resolvedAt: 2026-11-02T18:34:10Z
+                      comment: Quarterly partner reconciliation, ticket FIN-2231.
+                      bindingDigest: sha256:c1eded6a6ea542660a9ef90aa350480b3c388ac640bfb17641c15a20079120ee
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: NOT_FOUND (also returned for approvals in other tenants).
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "409":
+          description: APPROVAL_NOT_PENDING, APPROVAL_BINDING_MISMATCH, SELF_APPROVAL_FORBIDDEN or IDEMPOTENCY_CONFLICT.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /v1/audit/events:
+    get:
+      tags:
+        - audit
+      operationId: listAuditEvents
+      summary: Read the tenant's hash-chained audit log in sequence order.
+      x-aegis-required-scopes:
+        - aegis:audit:read
+      parameters:
+        - name: from
+          in: query
+          required: false
+          description: Inclusive lower bound on occurredAt.
+          schema:
+            $ref: "#/components/schemas/Timestamp"
+        - name: to
+          in: query
+          required: false
+          description: Exclusive upper bound on occurredAt.
+          schema:
+            $ref: "#/components/schemas/Timestamp"
+        - name: type
+          in: query
+          required: false
+          description: Filter by event type.
+          schema:
+            $ref: "#/components/schemas/AuditEventType"
+        - name: agentId
+          in: query
+          required: false
+          description: Filter by agent.
+          schema:
+            $ref: "#/components/schemas/AgentId"
+        - name: decisionId
+          in: query
+          required: false
+          description: Filter by decision.
+          schema:
+            $ref: "#/components/schemas/Uuid"
+        - name: limit
+          in: query
+          required: false
+          description: Page size.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque cursor from a previous page.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 512
+        - $ref: "#/components/parameters/CorrelationIdHeader"
+      responses:
+        "200":
+          description: A page of audit events.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditEventPage"
+              examples:
+                audit-event-page:
+                  value:
+                    items:
+                      - eventId: c0a80101-0000-4000-8000-000000000001
+                        tenantId: tnt_acme
+                        sequence: 0
+                        occurredAt: 2026-11-02T18:30:00Z
+                        type: DECISION_EVALUATED
+                        actor:
+                          kind: AGENT
+                          id: agent-crm-assistant
+                        requestId: 6f1c2a3b-4d5e-4f60-8a71-9b8c7d6e5f40
+                        decisionId: 9e8d7c6b-5a49-4382-b716-0f1e2d3c4b5a
+                        approvalId: 3c9a4f1e-2b7d-4e8a-9c6f-1d2e3f4a5b6c
+                        policyVersion: r7.3f2a9c1b0d4e
+                        action: crm.customers.export
+                        resource:
+                          type: crm.customer_table
+                          id: customers
+                        effect: REQUIRE_APPROVAL
+                        reasonCodes:
+                          - APPROVAL_REQUIRED
+                        payloadDigest: sha256:1a9f3f0ab9612d0a42f4ab6a981ac7b207187a478eb0f577adc1658f3866f746
+                        previousEventHash: null
+                        eventHash: sha256:32fbc715908316950ae45cc8c65922e3c2ac01adfc974324c28f778b185b56f4
+                      - eventId: c0a80101-0000-4000-8000-000000000002
+                        tenantId: tnt_acme
+                        sequence: 1
+                        occurredAt: 2026-11-02T18:34:10Z
+                        type: APPROVAL_RESOLVED
+                        actor:
+                          kind: PRINCIPAL
+                          id: usr_bob_security
+                        requestId: null
+                        decisionId: 9e8d7c6b-5a49-4382-b716-0f1e2d3c4b5a
+                        approvalId: 3c9a4f1e-2b7d-4e8a-9c6f-1d2e3f4a5b6c
+                        policyVersion: r7.3f2a9c1b0d4e
+                        action: crm.customers.export
+                        resource:
+                          type: crm.customer_table
+                          id: customers
+                        effect: null
+                        reasonCodes: []
+                        payloadDigest: sha256:0f87cf368ffb58a74684b989e2af3677bae0f2a5dbe269f9b7ff71ba72783f6d
+                        previousEventHash: sha256:32fbc715908316950ae45cc8c65922e3c2ac01adfc974324c28f778b185b56f4
+                        eventHash: sha256:212a3ed34787098c0337e83d3928417126ce44deff38f910f656e5eae45059c4
+                    nextCursor: eyJzZXEiOjF9.c2lnbmF0dXJl
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /v1/policies:
+    get:
+      tags:
+        - policies
+      operationId: listPolicies
+      summary: List policies in the caller's tenant.
+      x-aegis-required-scopes:
+        - aegis:policies:read
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Page size.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque cursor from a previous page.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 512
+        - $ref: "#/components/parameters/CorrelationIdHeader"
+      responses:
+        "200":
+          description: A page of policies.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PolicyPage"
+              examples:
+                policy-page:
+                  value:
+                    items:
+                      - policyId: data-export-controls
+                        tenantId: tnt_acme
+                        name: Data export controls
+                        description: Guards bulk and external customer-data exports.
+                        activeVersion: 7
+                        latestVersion: 7
+                        tenantPolicyVersion: r7.3f2a9c1b0d4e
+                        createdAt: 2026-10-01T09:00:00Z
+                        updatedAt: 2026-11-02T17:00:00Z
+                    nextCursor: null
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    post:
+      tags:
+        - policies
+      operationId: createPolicyVersion
+      summary: Create a policy or append a new immutable version.
+      description: The tenant is taken from the authenticated administrator. The document is validated with the same validator the engine uses (@aegis/policy-engine compilePolicySet); invalid documents are rejected with 400 POLICY_INVALID and are never stored as ACTIVE.
+      x-aegis-required-scopes:
+        - aegis:policies:write
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKeyHeader"
+        - $ref: "#/components/parameters/CorrelationIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePolicyRequest"
+            examples:
+              create-policy-request:
+                value:
+                  policyId: data-export-controls
+                  name: Data export controls
+                  description: Guards bulk and external customer-data exports.
+                  document:
+                    schemaVersion: aegis.policy/v1
+                    actionCatalog:
+                      - crm.customers.read
+                      - crm.customers.export
+                      - crm.customers.delete
+                    decisionTtlSeconds: 60
+                    rules:
+                      - id: allow-crm-read
+                        effect: ALLOW
+                        actions:
+                          - crm.customers.read
+                        resourceTypes:
+                          - crm.customer_table
+                        sensitivity:
+                          max: confidential
+                      - id: allow-small-internal-export
+                        effect: ALLOW
+                        actions:
+                          - crm.customers.export
+                        resourceTypes:
+                          - crm.customer_table
+                        when:
+                          all:
+                            - lte:
+                                - ref: resource.attributes.recordCount
+                                - value: 1000
+                            - eq:
+                                - ref: resource.attributes.destination
+                                - value: internal
+                      - id: require-approval-bulk-export
+                        description: Bulk or external exports need a human approver.
+                        effect: REQUIRE_APPROVAL
+                        actions:
+                          - crm.customers.export
+                        resourceTypes:
+                          - crm.customer_table
+                        when:
+                          any:
+                            - gt:
+                                - ref: resource.attributes.recordCount
+                                - value: 1000
+                            - ne:
+                                - ref: resource.attributes.destination
+                                - value: internal
+                        approval:
+                          ttlSeconds: 3600
+                      - id: deny-restricted-export
+                        effect: DENY
+                        actions:
+                          - crm.customers.export
+                        resourceTypes:
+                          - "*"
+                        sensitivity:
+                          min: restricted
+                      - id: deny-delete-outside-business-hours
+                        effect: DENY
+                        actions:
+                          - crm.customers.delete
+                        resourceTypes:
+                          - "*"
+                        when:
+                          not:
+                            eq:
+                              - ref: env.businessHours
+                              - value: true
+                      - id: deny-untrusted-network
+                        effect: DENY
+                        actions:
+                          - "*"
+                        resourceTypes:
+                          - "*"
+                        when:
+                          eq:
+                            - ref: env.networkZone
+                            - value: untrusted
+                  activate: true
+                  expectedLatestVersion: 6
+      responses:
+        "201":
+          description: Version created.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PolicyVersion"
+              examples:
+                policy-version:
+                  value:
+                    policyId: data-export-controls
+                    tenantId: tnt_acme
+                    version: 7
+                    state: ACTIVE
+                    documentDigest: sha256:a94eb40572bc2a8e0b28aff51c14e63e29d8e605e41f5b607acd3e92776ef443
+                    document:
+                      schemaVersion: aegis.policy/v1
+                      actionCatalog:
+                        - crm.customers.read
+                        - crm.customers.export
+                        - crm.customers.delete
+                      decisionTtlSeconds: 60
+                      rules:
+                        - id: allow-crm-read
+                          effect: ALLOW
+                          actions:
+                            - crm.customers.read
+                          resourceTypes:
+                            - crm.customer_table
+                          sensitivity:
+                            max: confidential
+                        - id: allow-small-internal-export
+                          effect: ALLOW
+                          actions:
+                            - crm.customers.export
+                          resourceTypes:
+                            - crm.customer_table
+                          when:
+                            all:
+                              - lte:
+                                  - ref: resource.attributes.recordCount
+                                  - value: 1000
+                              - eq:
+                                  - ref: resource.attributes.destination
+                                  - value: internal
+                        - id: require-approval-bulk-export
+                          description: Bulk or external exports need a human approver.
+                          effect: REQUIRE_APPROVAL
+                          actions:
+                            - crm.customers.export
+                          resourceTypes:
+                            - crm.customer_table
+                          when:
+                            any:
+                              - gt:
+                                  - ref: resource.attributes.recordCount
+                                  - value: 1000
+                              - ne:
+                                  - ref: resource.attributes.destination
+                                  - value: internal
+                          approval:
+                            ttlSeconds: 3600
+                        - id: deny-restricted-export
+                          effect: DENY
+                          actions:
+                            - crm.customers.export
+                          resourceTypes:
+                            - "*"
+                          sensitivity:
+                            min: restricted
+                        - id: deny-delete-outside-business-hours
+                          effect: DENY
+                          actions:
+                            - crm.customers.delete
+                          resourceTypes:
+                            - "*"
+                          when:
+                            not:
+                              eq:
+                                - ref: env.businessHours
+                                - value: true
+                        - id: deny-untrusted-network
+                          effect: DENY
+                          actions:
+                            - "*"
+                          resourceTypes:
+                            - "*"
+                          when:
+                            eq:
+                              - ref: env.networkZone
+                              - value: untrusted
+                    createdBy: usr_carol_admin
+                    createdAt: 2026-11-02T17:00:00Z
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: "CONFLICT: expectedLatestVersion mismatch, or IDEMPOTENCY_CONFLICT."
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /v1/health:
+    get:
+      tags:
+        - health
+      operationId: getHealth
+      summary: Liveness and readiness.
+      security: []
+      responses:
+        "200":
+          description: Service is serving.
+          headers:
+            X-Correlation-Id:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+              examples:
+                health-response:
+                  value:
+                    status: ok
+                    apiVersion: 1.0.0
+                    time: 2026-11-02T18:30:00Z
+        "503":
+          description: Not ready. Clients MUST treat decisions as unavailable (fail closed).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Short-lived access token from the tenant IdP or AEGIS workload identity. The server derives tenantId, principal/agent identity and scopes exclusively from verified claims. Required scopes are listed in x-aegis-required-scopes per operation.
+  headers:
+    CorrelationId:
+      description: Echoes the request X-Correlation-Id or a server-generated value.
+      schema:
+        type: string
+        maxLength: 128
+  parameters:
+    CorrelationIdHeader:
+      name: X-Correlation-Id
+      in: header
+      required: false
+      schema:
+        type: string
+        pattern: ^[A-Za-z0-9._:-]{1,128}$
+    IdempotencyKeyHeader:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: Makes retries of non-evaluate POSTs safe. Same key + different body => 409 IDEMPOTENCY_CONFLICT.
+      schema:
+        $ref: "#/components/schemas/Uuid"
+  responses:
+    InvalidRequest:
+      description: INVALID_REQUEST or POLICY_INVALID.
+      headers:
+        X-Correlation-Id:
+          $ref: "#/components/headers/CorrelationId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    Unauthenticated:
+      description: "UNAUTHENTICATED: missing, expired or invalid credential."
+      headers:
+        X-Correlation-Id:
+          $ref: "#/components/headers/CorrelationId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    Forbidden:
+      description: "FORBIDDEN: credential lacks scope, or agentId does not match the credential."
+      headers:
+        X-Correlation-Id:
+          $ref: "#/components/headers/CorrelationId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    RateLimited:
+      description: RATE_LIMITED. Honour Retry-After.
+      headers:
+        X-Correlation-Id:
+          $ref: "#/components/headers/CorrelationId"
+        Retry-After:
+          schema:
+            type: integer
+            minimum: 0
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    Internal:
+      description: INTERNAL. Not retryable by default; the decision is unknown and must be treated as DENY.
+      headers:
+        X-Correlation-Id:
+          $ref: "#/components/headers/CorrelationId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    Unavailable:
+      description: UNAVAILABLE. Retryable with backoff; until success the action must not execute.
+      headers:
+        X-Correlation-Id:
+          $ref: "#/components/headers/CorrelationId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+  schemas:
+    ActionName:
+      description: Dotted action name "<resource>.<operation>" (2-5 lowercase segments), e.g. "crm.customers.export".
+      examples:
+        - crm.customers.export
+      maxLength: 128
+      pattern: ^[a-z][a-z0-9_-]{0,62}(\.[a-z][a-z0-9_-]{0,62}){1,4}$
+      type: string
+    ActionPattern:
+      description: 'Action matcher: "*", an exact action name, or a namespace prefix such as "crm.*". No other wildcards.'
+      maxLength: 128
+      pattern: ^(\*|[a-z][a-z0-9_-]{0,62}(\.[a-z][a-z0-9_-]{0,62}){0,4}\.\*|[a-z][a-z0-9_-]{0,62}(\.[a-z][a-z0-9_-]{0,62}){1,4})$
+      type: string
+    AgentId:
+      description: Registered agent identity. A claim until matched against the authenticated credential.
+      maxLength: 128
+      pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+      type: string
+    AgentIdentity:
+      description: Registered agent. Authenticated by a credential bound to agentId; model-generated self-descriptions are ignored.
+      properties:
+        agentId:
+          $ref: "#/components/schemas/AgentId"
+        tenantId:
+          $ref: "#/components/schemas/TenantId"
+        ownerPrincipalId:
+          $ref: "#/components/schemas/PrincipalId"
+        displayName:
+          description: Human-readable label. NEVER used for authorization or identity matching.
+          maxLength: 200
+          minLength: 1
+          type: string
+        status:
+          anyOf:
+            - const: ACTIVE
+              type: string
+            - const: SUSPENDED
+              type: string
+            - const: REVOKED
+              type: string
+        attributes:
+          $ref: "#/components/schemas/Attributes"
+        credentialRefIds:
+          items:
+            $ref: "#/components/schemas/CredentialRefId"
+          maxItems: 32
+          type: array
+        createdAt:
+          $ref: "#/components/schemas/Timestamp"
+      required:
+        - agentId
+        - tenantId
+        - ownerPrincipalId
+        - displayName
+        - status
+        - attributes
+        - credentialRefIds
+        - createdAt
+      type: object
+    ApprovalPage:
+      properties:
+        items:
+          items:
+            $ref: "#/components/schemas/ApprovalRequest"
+          maxItems: 200
+          type: array
+        nextCursor:
+          anyOf:
+            - maxLength: 512
+              minLength: 1
+              type: string
+            - type: "null"
+      required:
+        - items
+        - nextCursor
+      type: object
+    ApprovalRequest:
+      description: Pending human authorization bound (via bindingDigest) to one tenant, agent, principal, action, resource and arguments digest. It can never authorize anything else, and is consumed on first use.
+      properties:
+        approvalId:
+          $ref: "#/components/schemas/Uuid"
+        tenantId:
+          $ref: "#/components/schemas/TenantId"
+        decisionId:
+          $ref: "#/components/schemas/Uuid"
+        requestId:
+          $ref: "#/components/schemas/Uuid"
+        agentId:
+          $ref: "#/components/schemas/AgentId"
+        requestingPrincipalId:
+          $ref: "#/components/schemas/PrincipalId"
+        action:
+          $ref: "#/components/schemas/ActionName"
+        resource:
+          $ref: "#/components/schemas/ResourceRef"
+        argumentsDigest:
+          anyOf:
+            - $ref: "#/components/schemas/Sha256Digest"
+            - type: "null"
+        bindingDigest:
+          $ref: "#/components/schemas/Sha256Digest"
+        policyVersion:
+          maxLength: 128
+          minLength: 1
+          type: string
+        matchedRuleIds:
+          items:
+            maxLength: 200
+            type: string
+          maxItems: 256
+          type: array
+        reasonCodes:
+          items:
+            $ref: "#/components/schemas/ReasonCode"
+          maxItems: 32
+          type: array
+        status:
+          $ref: "#/components/schemas/ApprovalStatus"
+        createdAt:
+          $ref: "#/components/schemas/Timestamp"
+        expiresAt:
+          $ref: "#/components/schemas/Timestamp"
+        resolution:
+          anyOf:
+            - $ref: "#/components/schemas/ApprovalResolution"
+            - type: "null"
+      required:
+        - approvalId
+        - tenantId
+        - decisionId
+        - requestId
+        - agentId
+        - requestingPrincipalId
+        - action
+        - resource
+        - argumentsDigest
+        - bindingDigest
+        - policyVersion
+        - matchedRuleIds
+        - reasonCodes
+        - status
+        - createdAt
+        - expiresAt
+        - resolution
+      type: object
+    ApprovalRequirement:
+      additionalProperties: false
+      properties:
+        ttlSeconds:
+          maximum: 604800
+          minimum: 60
+          type: integer
+      required:
+        - ttlSeconds
+      type: object
+    ApprovalResolution:
+      properties:
+        decision:
+          anyOf:
+            - const: APPROVE
+              type: string
+            - const: REJECT
+              type: string
+        resolvedBy:
+          $ref: "#/components/schemas/PrincipalId"
+        resolvedAt:
+          $ref: "#/components/schemas/Timestamp"
+        comment:
+          anyOf:
+            - maxLength: 2000
+              type: string
+            - type: "null"
+        bindingDigest:
+          $ref: "#/components/schemas/Sha256Digest"
+      required:
+        - decision
+        - resolvedBy
+        - resolvedAt
+        - comment
+        - bindingDigest
+      type: object
+    ApprovalStatus:
+      anyOf:
+        - const: PENDING
+          type: string
+        - const: APPROVED
+          type: string
+        - const: REJECTED
+          type: string
+        - const: EXPIRED
+          type: string
+        - const: CANCELLED
+          type: string
+        - const: CONSUMED
+          type: string
+    AttributeRef:
+      description: Reference to an evaluation attribute. "request.context.*" is caller-supplied and untrusted.
+      examples:
+        - resource.attributes.recordCount
+        - env.networkZone
+      pattern: ^(action|resource\.type|resource\.id|agent\.id|principal\.id|(resource\.attributes|agent\.attributes|principal\.attributes|request\.context|env)\.[A-Za-z][A-Za-z0-9_]{0,63})$
+      type: string
+    AttributeScalar:
+      anyOf:
+        - maxLength: 1024
+          type: string
+        - type: number
+        - type: boolean
+        - type: "null"
+      description: String (<=1024 chars), finite number, boolean or null.
+    AttributeValue:
+      anyOf:
+        - $ref: "#/components/schemas/AttributeScalar"
+        - items:
+            $ref: "#/components/schemas/AttributeScalar"
+          maxItems: 256
+          type: array
+      description: Scalar or flat list of scalars. Nested objects are not permitted.
+    Attributes:
+      additionalProperties: false
+      description: Flat attribute map. Keys match ^[A-Za-z][A-Za-z0-9_]{0,63}$ (so "__proto__" and dotted keys are impossible); at most 64 entries.
+      maxProperties: 64
+      patternProperties:
+        ^[A-Za-z][A-Za-z0-9_]{0,63}$:
+          $ref: "#/components/schemas/AttributeValue"
+      type: object
+    AuditActor:
+      additionalProperties: false
+      properties:
+        kind:
+          anyOf:
+            - const: PRINCIPAL
+              type: string
+            - const: AGENT
+              type: string
+            - const: SYSTEM
+              type: string
+        id:
+          $ref: "#/components/schemas/Identifier"
+      required:
+        - kind
+        - id
+      type: object
+    AuditEvent:
+      description: Append-only, hash-chained audit record. eventHash = sha256(canonical(event without eventHash)); previousEventHash links to the prior event of the same tenant (null only for sequence 0).
+      properties:
+        eventId:
+          $ref: "#/components/schemas/Uuid"
+        tenantId:
+          $ref: "#/components/schemas/TenantId"
+        sequence:
+          description: Gap-free per-tenant sequence number.
+          minimum: 0
+          type: integer
+        occurredAt:
+          $ref: "#/components/schemas/Timestamp"
+        type:
+          $ref: "#/components/schemas/AuditEventType"
+        actor:
+          $ref: "#/components/schemas/AuditActor"
+        requestId:
+          anyOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
+        decisionId:
+          anyOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
+        approvalId:
+          anyOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
+        policyVersion:
+          anyOf:
+            - maxLength: 128
+              minLength: 1
+              type: string
+            - type: "null"
+        action:
+          anyOf:
+            - $ref: "#/components/schemas/ActionName"
+            - type: "null"
+        resource:
+          anyOf:
+            - $ref: "#/components/schemas/ResourceKey"
+            - type: "null"
+        effect:
+          anyOf:
+            - $ref: "#/components/schemas/Effect"
+            - type: "null"
+        reasonCodes:
+          items:
+            $ref: "#/components/schemas/ReasonCode"
+          maxItems: 32
+          type: array
+        payloadDigest:
+          $ref: "#/components/schemas/Sha256Digest"
+        previousEventHash:
+          anyOf:
+            - $ref: "#/components/schemas/Sha256Digest"
+            - type: "null"
+        eventHash:
+          $ref: "#/components/schemas/Sha256Digest"
+      required:
+        - eventId
+        - tenantId
+        - sequence
+        - occurredAt
+        - type
+        - actor
+        - requestId
+        - decisionId
+        - approvalId
+        - policyVersion
+        - action
+        - resource
+        - effect
+        - reasonCodes
+        - payloadDigest
+        - previousEventHash
+        - eventHash
+      type: object
+    AuditEventPage:
+      properties:
+        items:
+          items:
+            $ref: "#/components/schemas/AuditEvent"
+          maxItems: 200
+          type: array
+        nextCursor:
+          anyOf:
+            - maxLength: 512
+              minLength: 1
+              type: string
+            - type: "null"
+      required:
+        - items
+        - nextCursor
+      type: object
+    AuditEventType:
+      anyOf:
+        - const: DECISION_EVALUATED
+          type: string
+        - const: APPROVAL_REQUESTED
+          type: string
+        - const: APPROVAL_RESOLVED
+          type: string
+        - const: APPROVAL_CONSUMED
+          type: string
+        - const: APPROVAL_EXPIRED
+          type: string
+        - const: EXECUTION_AUTHORIZED
+          type: string
+        - const: EXECUTION_REJECTED
+          type: string
+        - const: POLICY_CREATED
+          type: string
+        - const: POLICY_ACTIVATED
+          type: string
+        - const: AUTHENTICATION_FAILED
+          type: string
+        - const: AUTHORIZATION_ERROR
+          type: string
+    Condition:
+      anyOf:
+        - additionalProperties: false
+          properties:
+            all:
+              items:
+                $ref: "#/components/schemas/Condition"
+              maxItems: 32
+              minItems: 1
+              type: array
+          required:
+            - all
+          type: object
+        - additionalProperties: false
+          properties:
+            any:
+              items:
+                $ref: "#/components/schemas/Condition"
+              maxItems: 32
+              minItems: 1
+              type: array
+          required:
+            - any
+          type: object
+        - additionalProperties: false
+          properties:
+            not:
+              $ref: "#/components/schemas/Condition"
+          required:
+            - not
+          type: object
+        - additionalProperties: false
+          properties:
+            eq:
+              prefixItems:
+                - $ref: "#/components/schemas/Operand"
+                - $ref: "#/components/schemas/Operand"
+              items: false
+              maxItems: 2
+              minItems: 2
+              type: array
+          required:
+            - eq
+          type: object
+        - additionalProperties: false
+          properties:
+            ne:
+              prefixItems:
+                - $ref: "#/components/schemas/Operand"
+                - $ref: "#/components/schemas/Operand"
+              items: false
+              maxItems: 2
+              minItems: 2
+              type: array
+          required:
+            - ne
+          type: object
+        - additionalProperties: false
+          properties:
+            lt:
+              prefixItems:
+                - $ref: "#/components/schemas/Operand"
+                - $ref: "#/components/schemas/Operand"
+              items: false
+              maxItems: 2
+              minItems: 2
+              type: array
+          required:
+            - lt
+          type: object
+        - additionalProperties: false
+          properties:
+            lte:
+              prefixItems:
+                - $ref: "#/components/schemas/Operand"
+                - $ref: "#/components/schemas/Operand"
+              items: false
+              maxItems: 2
+              minItems: 2
+              type: array
+          required:
+            - lte
+          type: object
+        - additionalProperties: false
+          properties:
+            gt:
+              prefixItems:
+                - $ref: "#/components/schemas/Operand"
+                - $ref: "#/components/schemas/Operand"
+              items: false
+              maxItems: 2
+              minItems: 2
+              type: array
+          required:
+            - gt
+          type: object
+        - additionalProperties: false
+          properties:
+            gte:
+              prefixItems:
+                - $ref: "#/components/schemas/Operand"
+                - $ref: "#/components/schemas/Operand"
+              items: false
+              maxItems: 2
+              minItems: 2
+              type: array
+          required:
+            - gte
+          type: object
+        - additionalProperties: false
+          properties:
+            in:
+              prefixItems:
+                - $ref: "#/components/schemas/Operand"
+                - $ref: "#/components/schemas/Operand"
+              items: false
+              maxItems: 2
+              minItems: 2
+              type: array
+          required:
+            - in
+          type: object
+        - additionalProperties: false
+          properties:
+            exists:
+              $ref: "#/components/schemas/AttributeRef"
+          required:
+            - exists
+          type: object
+        - additionalProperties: false
+          properties:
+            startsWith:
+              prefixItems:
+                - additionalProperties: false
+                  properties:
+                    ref:
+                      $ref: "#/components/schemas/AttributeRef"
+                  required:
+                    - ref
+                  type: object
+                - maxLength: 1024
+                  minLength: 1
+                  type: string
+              items: false
+              maxItems: 2
+              minItems: 2
+              type: array
+          required:
+            - startsWith
+          type: object
+        - additionalProperties: false
+          properties:
+            endsWith:
+              prefixItems:
+                - additionalProperties: false
+                  properties:
+                    ref:
+                      $ref: "#/components/schemas/AttributeRef"
+                  required:
+                    - ref
+                  type: object
+                - maxLength: 1024
+                  minLength: 1
+                  type: string
+              items: false
+              maxItems: 2
+              minItems: 2
+              type: array
+          required:
+            - endsWith
+          type: object
+      description: Boolean condition AST evaluated with three-valued (Kleene) logic. Missing or mistyped attributes yield UNKNOWN.
+    CreatePolicyRequest:
+      additionalProperties: false
+      description: Creates a policy or appends a new immutable version. Requires scope aegis:policies:write.
+      properties:
+        policyId:
+          $ref: "#/components/schemas/PolicyId"
+        name:
+          maxLength: 200
+          minLength: 1
+          type: string
+        description:
+          maxLength: 500
+          type: string
+        document:
+          $ref: "#/components/schemas/PolicyDocument"
+        activate:
+          description: Activate the new version atomically on creation.
+          type: boolean
+        expectedLatestVersion:
+          anyOf:
+            - minimum: 1
+              type: integer
+            - type: "null"
+          description: Optimistic concurrency guard. null = the policy must not exist yet; N = the latest version must be N. Mismatch returns 409 CONFLICT.
+      required:
+        - policyId
+        - name
+        - document
+        - activate
+        - expectedLatestVersion
+      type: object
+    CredentialRefId:
+      description: Opaque stable identifier (letters, digits, ".", "_", ":", "-"; must start alphanumeric). Identifiers are compared byte-for-byte and are never interpreted.
+      maxLength: 128
+      pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+      type: string
+    CredentialReference:
+      description: Pointer to a credential held by the enforcement point. Agents never receive the secret; the trusted tool adapter resolves it only after verifying an execution authorization.
+      properties:
+        credentialRefId:
+          $ref: "#/components/schemas/CredentialRefId"
+        tenantId:
+          $ref: "#/components/schemas/TenantId"
+        provider:
+          anyOf:
+            - const: vault
+              type: string
+            - const: aws-secrets-manager
+              type: string
+            - const: gcp-secret-manager
+              type: string
+            - const: azure-key-vault
+              type: string
+            - const: kms
+              type: string
+            - const: other
+              type: string
+        locator:
+          description: Where the secret lives (path/ARN). Never the secret value itself.
+          maxLength: 512
+          minLength: 1
+          pattern: ^[^\s]+$
+          type: string
+        allowedActions:
+          items:
+            $ref: "#/components/schemas/ActionPattern"
+          maxItems: 64
+          minItems: 1
+          type: array
+        createdAt:
+          $ref: "#/components/schemas/Timestamp"
+        rotatesAt:
+          anyOf:
+            - $ref: "#/components/schemas/Timestamp"
+            - type: "null"
+      required:
+        - credentialRefId
+        - tenantId
+        - provider
+        - locator
+        - allowedActions
+        - createdAt
+        - rotatesAt
+      type: object
+    Decision:
+      description: Server-side decision record (persisted and audited).
+      properties:
+        decisionId:
+          $ref: "#/components/schemas/Uuid"
+        tenantId:
+          $ref: "#/components/schemas/TenantId"
+        requestId:
+          $ref: "#/components/schemas/Uuid"
+        agentId:
+          $ref: "#/components/schemas/AgentId"
+        principalId:
+          $ref: "#/components/schemas/PrincipalId"
+        action:
+          $ref: "#/components/schemas/ActionName"
+        resource:
+          $ref: "#/components/schemas/ResourceKey"
+        argumentsDigest:
+          anyOf:
+            - $ref: "#/components/schemas/Sha256Digest"
+            - type: "null"
+        effect:
+          $ref: "#/components/schemas/Effect"
+        reasonCodes:
+          items:
+            $ref: "#/components/schemas/ReasonCode"
+          maxItems: 32
+          type: array
+        policyVersion:
+          maxLength: 128
+          minLength: 1
+          type: string
+        matchedRuleIds:
+          items:
+            maxLength: 200
+            type: string
+          maxItems: 256
+          type: array
+        approvalId:
+          anyOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
+        evaluatedAt:
+          $ref: "#/components/schemas/Timestamp"
+        expiresAt:
+          $ref: "#/components/schemas/Timestamp"
+      required:
+        - decisionId
+        - tenantId
+        - requestId
+        - agentId
+        - principalId
+        - action
+        - resource
+        - argumentsDigest
+        - effect
+        - reasonCodes
+        - policyVersion
+        - matchedRuleIds
+        - approvalId
+        - evaluatedAt
+        - expiresAt
+      type: object
+    DelegatedAuthority:
+      description: Server-managed grant from a principal to an agent. The effective authority of an agent is the intersection of its grants and tenant policy; grants never widen policy and policy never widens grants.
+      properties:
+        grantId:
+          $ref: "#/components/schemas/GrantId"
+        tenantId:
+          $ref: "#/components/schemas/TenantId"
+        agentId:
+          $ref: "#/components/schemas/AgentId"
+        delegatorPrincipalId:
+          $ref: "#/components/schemas/PrincipalId"
+        actions:
+          items:
+            $ref: "#/components/schemas/ActionPattern"
+          maxItems: 64
+          minItems: 1
+          type: array
+        scopes:
+          items:
+            $ref: "#/components/schemas/DelegationScope"
+          maxItems: 64
+          minItems: 1
+          type: array
+        maxSensitivity:
+          $ref: "#/components/schemas/Sensitivity"
+        notBefore:
+          $ref: "#/components/schemas/Timestamp"
+        expiresAt:
+          $ref: "#/components/schemas/Timestamp"
+        revokedAt:
+          anyOf:
+            - $ref: "#/components/schemas/Timestamp"
+            - type: "null"
+        createdAt:
+          $ref: "#/components/schemas/Timestamp"
+      required:
+        - grantId
+        - tenantId
+        - agentId
+        - delegatorPrincipalId
+        - actions
+        - scopes
+        - maxSensitivity
+        - notBefore
+        - expiresAt
+        - revokedAt
+        - createdAt
+      type: object
+    DelegationScope:
+      additionalProperties: false
+      description: Omit resourceIds to cover every resource of the type.
+      properties:
+        resourceType:
+          $ref: "#/components/schemas/ResourceTypePattern"
+        resourceIds:
+          items:
+            $ref: "#/components/schemas/ResourceId"
+          maxItems: 256
+          minItems: 1
+          type: array
+          uniqueItems: true
+      required:
+        - resourceType
+      type: object
+    Effect:
+      anyOf:
+        - const: ALLOW
+          type: string
+        - const: DENY
+          type: string
+        - const: REQUIRE_APPROVAL
+          type: string
+    ErrorDetail:
+      properties:
+        field:
+          description: JSON Pointer to the offending field, when applicable.
+          maxLength: 256
+          type: string
+        issue:
+          maxLength: 512
+          type: string
+      required:
+        - field
+        - issue
+      type: object
+    ErrorEnvelope:
+      description: Every non-2xx response uses this envelope. HTTP status and error.code are both normative.
+      properties:
+        error:
+          properties:
+            code:
+              description: One of ERROR_CODES; unknown codes must be treated as non-retryable.
+              pattern: ^[A-Z][A-Z0-9_]{1,63}$
+              type: string
+            message:
+              description: Human-readable. Never contains secrets, stack traces or other tenants' data.
+              maxLength: 1024
+              type: string
+            correlationId:
+              maxLength: 128
+              minLength: 1
+              type: string
+            retryable:
+              type: boolean
+            details:
+              items:
+                $ref: "#/components/schemas/ErrorDetail"
+              maxItems: 50
+              type: array
+          required:
+            - code
+            - message
+            - correlationId
+            - retryable
+          type: object
+      required:
+        - error
+      type: object
+    EvaluateDecisionRequest:
+      additionalProperties: false
+      description: "Agent request for a decision. It carries no tenant, principal, role or permission: those are derived by the server from the verified credential and server-managed grants. `context` is caller-supplied and untrusted. `argumentsDigest` (optional in v1, REQUIRED by servers for tools that return execution authorizations) binds the decision to the exact tool arguments. `approvalId` resumes a previously approved request."
+      properties:
+        requestId:
+          $ref: "#/components/schemas/Uuid"
+        agentId:
+          $ref: "#/components/schemas/AgentId"
+        action:
+          $ref: "#/components/schemas/ActionName"
+        resource:
+          $ref: "#/components/schemas/ResourceRef"
+        context:
+          $ref: "#/components/schemas/Attributes"
+        argumentsDigest:
+          $ref: "#/components/schemas/Sha256Digest"
+        approvalId:
+          $ref: "#/components/schemas/Uuid"
+      required:
+        - requestId
+        - agentId
+        - action
+        - resource
+        - context
+      type: object
+    EvaluateDecisionResponse:
+      description: A decision is advisory to the caller and authoritative only at an enforcement point. expiresAt bounds how long an ALLOW may be relied upon; it is never a reusable credential.
+      properties:
+        decisionId:
+          $ref: "#/components/schemas/Uuid"
+        effect:
+          $ref: "#/components/schemas/Effect"
+        reasonCodes:
+          items:
+            $ref: "#/components/schemas/ReasonCode"
+          maxItems: 32
+          type: array
+        policyVersion:
+          maxLength: 128
+          minLength: 1
+          type: string
+        approvalId:
+          anyOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
+          description: Set when effect is REQUIRE_APPROVAL (the pending approval) or when an approval was consumed.
+        expiresAt:
+          $ref: "#/components/schemas/Timestamp"
+        executionAuthorization:
+          anyOf:
+            - $ref: "#/components/schemas/ExecutionAuthorization"
+            - type: "null"
+          description: Present only when effect is ALLOW and the server issues execution artifacts for this action.
+      required:
+        - decisionId
+        - effect
+        - reasonCodes
+        - policyVersion
+        - approvalId
+        - expiresAt
+      type: object
+    ExecutionAuthorization:
+      description: Short-lived (<=300s), single-use, Ed25519-signed artifact that a trusted enforcement point verifies before executing exactly the bound action on exactly the bound resource with exactly the bound arguments digest. The bindings object is informational; enforcement MUST rely only on the verified token claims.
+      properties:
+        token:
+          maxLength: 4096
+          minLength: 1
+          type: string
+        tokenType:
+          const: aegis-ea+jwt
+          type: string
+        singleUse:
+          const: true
+          type: boolean
+        expiresAt:
+          $ref: "#/components/schemas/Timestamp"
+        bindings:
+          $ref: "#/components/schemas/ExecutionAuthorizationBindings"
+      required:
+        - token
+        - tokenType
+        - singleUse
+        - expiresAt
+        - bindings
+      type: object
+    ExecutionAuthorizationBindings:
+      properties:
+        agentId:
+          $ref: "#/components/schemas/AgentId"
+        action:
+          $ref: "#/components/schemas/ActionName"
+        resource:
+          $ref: "#/components/schemas/ResourceKey"
+        argumentsDigest:
+          anyOf:
+            - $ref: "#/components/schemas/Sha256Digest"
+            - type: "null"
+        decisionId:
+          $ref: "#/components/schemas/Uuid"
+        approvalId:
+          anyOf:
+            - $ref: "#/components/schemas/Uuid"
+            - type: "null"
+        audience:
+          $ref: "#/components/schemas/Identifier"
+      required:
+        - agentId
+        - action
+        - resource
+        - argumentsDigest
+        - decisionId
+        - approvalId
+        - audience
+      type: object
+    GrantId:
+      description: Opaque stable identifier (letters, digits, ".", "_", ":", "-"; must start alphanumeric). Identifiers are compared byte-for-byte and are never interpreted.
+      maxLength: 128
+      pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+      type: string
+    HealthResponse:
+      description: Unauthenticated liveness/readiness. MUST NOT reveal tenant data, dependency hostnames or versions of internals.
+      properties:
+        status:
+          anyOf:
+            - const: ok
+              type: string
+            - const: degraded
+              type: string
+            - const: unavailable
+              type: string
+        apiVersion:
+          maxLength: 32
+          type: string
+        time:
+          $ref: "#/components/schemas/Timestamp"
+      required:
+        - status
+        - apiVersion
+        - time
+      type: object
+    Identifier:
+      description: Opaque stable identifier (letters, digits, ".", "_", ":", "-"; must start alphanumeric). Identifiers are compared byte-for-byte and are never interpreted.
+      maxLength: 128
+      pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+      type: string
+    ListApprovalsQuery:
+      additionalProperties: false
+      properties:
+        status:
+          $ref: "#/components/schemas/ApprovalStatus"
+        agentId:
+          $ref: "#/components/schemas/AgentId"
+        limit:
+          default: 50
+          maximum: 200
+          minimum: 1
+          type: integer
+        cursor:
+          description: Opaque, server-signed cursor.
+          maxLength: 512
+          minLength: 1
+          type: string
+      type: object
+    ListAuditEventsQuery:
+      additionalProperties: false
+      properties:
+        from:
+          $ref: "#/components/schemas/Timestamp"
+        to:
+          $ref: "#/components/schemas/Timestamp"
+        type:
+          $ref: "#/components/schemas/AuditEventType"
+        agentId:
+          $ref: "#/components/schemas/AgentId"
+        decisionId:
+          $ref: "#/components/schemas/Uuid"
+        limit:
+          default: 50
+          maximum: 200
+          minimum: 1
+          type: integer
+        cursor:
+          description: Opaque, server-signed cursor.
+          maxLength: 512
+          minLength: 1
+          type: string
+      type: object
+    ListPoliciesQuery:
+      additionalProperties: false
+      properties:
+        limit:
+          default: 50
+          maximum: 200
+          minimum: 1
+          type: integer
+        cursor:
+          description: Opaque, server-signed cursor.
+          maxLength: 512
+          minLength: 1
+          type: string
+      type: object
+    Operand:
+      anyOf:
+        - additionalProperties: false
+          properties:
+            ref:
+              $ref: "#/components/schemas/AttributeRef"
+          required:
+            - ref
+          type: object
+        - additionalProperties: false
+          properties:
+            value:
+              $ref: "#/components/schemas/AttributeScalar"
+          required:
+            - value
+          type: object
+        - additionalProperties: false
+          properties:
+            values:
+              items:
+                $ref: "#/components/schemas/AttributeScalar"
+              maxItems: 256
+              minItems: 1
+              type: array
+          required:
+            - values
+          type: object
+    Policy:
+      properties:
+        policyId:
+          $ref: "#/components/schemas/PolicyId"
+        tenantId:
+          $ref: "#/components/schemas/TenantId"
+        name:
+          maxLength: 200
+          minLength: 1
+          type: string
+        description:
+          anyOf:
+            - maxLength: 500
+              type: string
+            - type: "null"
+        activeVersion:
+          anyOf:
+            - minimum: 1
+              type: integer
+            - type: "null"
+        latestVersion:
+          minimum: 1
+          type: integer
+        tenantPolicyVersion:
+          description: The tenant-wide policy set version string that decisions report as policyVersion.
+          maxLength: 128
+          minLength: 1
+          type: string
+        createdAt:
+          $ref: "#/components/schemas/Timestamp"
+        updatedAt:
+          $ref: "#/components/schemas/Timestamp"
+      required:
+        - policyId
+        - tenantId
+        - name
+        - description
+        - activeVersion
+        - latestVersion
+        - tenantPolicyVersion
+        - createdAt
+        - updatedAt
+      type: object
+    PolicyDocument:
+      additionalProperties: false
+      description: "Tenant policy document. It intentionally has no tenantId: the tenant is bound by the server from the authenticated administrator, never from the document."
+      properties:
+        schemaVersion:
+          const: aegis.policy/v1
+          type: string
+        actionCatalog:
+          items:
+            $ref: "#/components/schemas/ActionName"
+          maxItems: 1024
+          minItems: 1
+          type: array
+          uniqueItems: true
+        decisionTtlSeconds:
+          maximum: 300
+          minimum: 1
+          type: integer
+        rules:
+          items:
+            $ref: "#/components/schemas/PolicyRule"
+          maxItems: 256
+          minItems: 1
+          type: array
+      required:
+        - schemaVersion
+        - rules
+      type: object
+    PolicyId:
+      description: Opaque stable identifier (letters, digits, ".", "_", ":", "-"; must start alphanumeric). Identifiers are compared byte-for-byte and are never interpreted.
+      maxLength: 128
+      pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+      type: string
+    PolicyPage:
+      properties:
+        items:
+          items:
+            $ref: "#/components/schemas/Policy"
+          maxItems: 200
+          type: array
+        nextCursor:
+          anyOf:
+            - maxLength: 512
+              minLength: 1
+              type: string
+            - type: "null"
+      required:
+        - items
+        - nextCursor
+      type: object
+    PolicyRule:
+      additionalProperties: false
+      description: "A rule applies when action, resource type, sensitivity, time window and condition all match. Precedence is by effect only: DENY > REQUIRE_APPROVAL > ALLOW. There are no numeric priorities."
+      properties:
+        id:
+          pattern: ^[a-z][a-z0-9-]{0,63}$
+          type: string
+        description:
+          maxLength: 500
+          type: string
+        effect:
+          $ref: "#/components/schemas/Effect"
+        actions:
+          items:
+            $ref: "#/components/schemas/ActionPattern"
+          maxItems: 64
+          minItems: 1
+          type: array
+        resourceTypes:
+          items:
+            $ref: "#/components/schemas/ResourceTypePattern"
+          maxItems: 64
+          minItems: 1
+          type: array
+        sensitivity:
+          $ref: "#/components/schemas/SensitivityRange"
+        timeWindows:
+          items:
+            $ref: "#/components/schemas/TimeWindow"
+          maxItems: 16
+          minItems: 1
+          type: array
+        when:
+          $ref: "#/components/schemas/Condition"
+        approval:
+          $ref: "#/components/schemas/ApprovalRequirement"
+      required:
+        - id
+        - effect
+        - actions
+        - resourceTypes
+      type: object
+    PolicyVersion:
+      properties:
+        policyId:
+          $ref: "#/components/schemas/PolicyId"
+        tenantId:
+          $ref: "#/components/schemas/TenantId"
+        version:
+          description: Monotonic per policy.
+          minimum: 1
+          type: integer
+        state:
+          $ref: "#/components/schemas/PolicyVersionState"
+        documentDigest:
+          $ref: "#/components/schemas/Sha256Digest"
+        document:
+          $ref: "#/components/schemas/PolicyDocument"
+        createdBy:
+          $ref: "#/components/schemas/PrincipalId"
+        createdAt:
+          $ref: "#/components/schemas/Timestamp"
+      required:
+        - policyId
+        - tenantId
+        - version
+        - state
+        - documentDigest
+        - document
+        - createdBy
+        - createdAt
+      type: object
+    PolicyVersionState:
+      anyOf:
+        - const: DRAFT
+          type: string
+        - const: ACTIVE
+          type: string
+        - const: SUPERSEDED
+          type: string
+    Principal:
+      description: Human or service principal. Attributes are server-managed (e.g. from the IdP), never caller-asserted.
+      properties:
+        principalId:
+          $ref: "#/components/schemas/PrincipalId"
+        tenantId:
+          $ref: "#/components/schemas/TenantId"
+        kind:
+          anyOf:
+            - const: HUMAN
+              type: string
+            - const: SERVICE
+              type: string
+        displayName:
+          description: Human-readable label. NEVER used for authorization or identity matching.
+          maxLength: 200
+          minLength: 1
+          type: string
+        status:
+          anyOf:
+            - const: ACTIVE
+              type: string
+            - const: DISABLED
+              type: string
+        attributes:
+          $ref: "#/components/schemas/Attributes"
+        createdAt:
+          $ref: "#/components/schemas/Timestamp"
+      required:
+        - principalId
+        - tenantId
+        - kind
+        - displayName
+        - status
+        - attributes
+        - createdAt
+      type: object
+    PrincipalId:
+      description: Human or service principal identifier.
+      maxLength: 128
+      pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+      type: string
+    ReasonCode:
+      description: Machine-readable reason. Unknown codes must be treated as opaque by clients.
+      pattern: ^[A-Z][A-Z0-9_]{1,63}$
+      type: string
+    ResolveApprovalRequest:
+      additionalProperties: false
+      description: The approver echoes the bindingDigest of the request they reviewed. The server rejects the resolution with 409 APPROVAL_BINDING_MISMATCH if it differs, so an approver can never approve something other than what they saw. Requires scope aegis:approvals:resolve; the requesting principal and the agent may not resolve their own approvals.
+      properties:
+        decision:
+          anyOf:
+            - const: APPROVE
+              type: string
+            - const: REJECT
+              type: string
+        expectedBindingDigest:
+          $ref: "#/components/schemas/Sha256Digest"
+        comment:
+          maxLength: 2000
+          type: string
+      required:
+        - decision
+        - expectedBindingDigest
+      type: object
+    ResourceId:
+      description: Opaque resource identifier; control characters are rejected.
+      maxLength: 256
+      minLength: 1
+      pattern: ^[^\u0000-\u001f\u007f]+$
+      type: string
+    ResourceKey:
+      additionalProperties: false
+      properties:
+        type:
+          $ref: "#/components/schemas/ResourceType"
+        id:
+          $ref: "#/components/schemas/ResourceId"
+      required:
+        - type
+        - id
+      type: object
+    ResourceRef:
+      additionalProperties: false
+      description: "Target resource. Caller-supplied attributes are claims: the server MUST overwrite server-owned keys (see docs/security/integration-requirements.md) before evaluation."
+      properties:
+        type:
+          $ref: "#/components/schemas/ResourceType"
+        id:
+          $ref: "#/components/schemas/ResourceId"
+        attributes:
+          $ref: "#/components/schemas/Attributes"
+      required:
+        - type
+        - id
+        - attributes
+      type: object
+    ResourceType:
+      examples:
+        - crm.customer_table
+      maxLength: 128
+      pattern: ^[a-z][a-z0-9_-]{0,62}(\.[a-z][a-z0-9_-]{0,62}){0,3}$
+      type: string
+    ResourceTypePattern:
+      description: Exact resource type or "*".
+      maxLength: 128
+      pattern: ^(\*|[a-z][a-z0-9_-]{0,62}(\.[a-z][a-z0-9_-]{0,62}){0,3})$
+      type: string
+    Sensitivity:
+      anyOf:
+        - const: public
+          type: string
+        - const: internal
+          type: string
+        - const: confidential
+          type: string
+        - const: restricted
+          type: string
+      description: "Ordered data classification: public < internal < confidential < restricted."
+    SensitivityRange:
+      additionalProperties: false
+      description: Matches resource.attributes.sensitivity. A missing or unrecognised value is treated as "restricted".
+      properties:
+        min:
+          $ref: "#/components/schemas/Sensitivity"
+        max:
+          $ref: "#/components/schemas/Sensitivity"
+      type: object
+    Sha256Digest:
+      description: '"sha256:" followed by lowercase hex SHA-256 of the AEGIS canonical JSON encoding (see canonicalization spec).'
+      pattern: ^sha256:[0-9a-f]{64}$
+      type: string
+    Tenant:
+      properties:
+        tenantId:
+          $ref: "#/components/schemas/TenantId"
+        name:
+          description: Human-readable label. NEVER used for authorization or identity matching.
+          maxLength: 200
+          minLength: 1
+          type: string
+        status:
+          anyOf:
+            - const: ACTIVE
+              type: string
+            - const: SUSPENDED
+              type: string
+        createdAt:
+          $ref: "#/components/schemas/Timestamp"
+      required:
+        - tenantId
+        - name
+        - status
+        - createdAt
+      type: object
+    TenantId:
+      description: Tenant identifier. Never accepted from request bodies on authenticated routes; derived from the verified credential.
+      maxLength: 128
+      pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+      type: string
+    TimeWindow:
+      additionalProperties: false
+      properties:
+        days:
+          items:
+            $ref: "#/components/schemas/Weekday"
+          maxItems: 7
+          minItems: 1
+          type: array
+          uniqueItems: true
+        start:
+          description: Inclusive local start "HH:MM".
+          pattern: ^([01][0-9]|2[0-3]):[0-5][0-9]$
+          type: string
+        end:
+          description: Exclusive local end "HH:MM" (or "24:00"); must be after start.
+          pattern: ^([01][0-9]|2[0-3]):[0-5][0-9]$|^24:00$
+          type: string
+        utcOffset:
+          description: Fixed UTC offset. IANA zones are intentionally unsupported in v1 for deterministic evaluation.
+          pattern: ^[+-](0[0-9]|1[0-4]):[0-5][0-9]$
+          type: string
+      required:
+        - days
+        - start
+        - end
+        - utcOffset
+      type: object
+    Timestamp:
+      description: RFC 3339 timestamp in UTC. Offsets other than "Z" are rejected.
+      examples:
+        - 2026-11-02T18:30:00Z
+      format: date-time
+      pattern: ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,9})?Z$
+      type: string
+    Uuid:
+      description: Canonical lowercase RFC 9562 UUID.
+      examples:
+        - 0b5f1d2e-8a4c-4e7b-9f61-2d3c4b5a6978
+      format: uuid
+      pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$
+      type: string
+    Weekday:
+      anyOf:
+        - const: MON
+          type: string
+        - const: TUE
+          type: string
+        - const: WED
+          type: string
+        - const: THU
+          type: string
+        - const: FRI
+          type: string
+        - const: SAT
+          type: string
+        - const: SUN
+          type: string
+    ErrorCode:
+      type: string
+      enum:
+        - INVALID_REQUEST
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - NOT_FOUND
+        - CONFLICT
+        - IDEMPOTENCY_CONFLICT
+        - APPROVAL_BINDING_MISMATCH
+        - APPROVAL_NOT_PENDING
+        - SELF_APPROVAL_FORBIDDEN
+        - POLICY_INVALID
+        - PAYLOAD_TOO_LARGE
+        - RATE_LIMITED
+        - INTERNAL
+        - UNAVAILABLE

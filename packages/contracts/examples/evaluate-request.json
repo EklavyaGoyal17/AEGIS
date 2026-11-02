@@ -1,0 +1,19 @@
+{
+  "requestId": "6f1c2a3b-4d5e-4f60-8a71-9b8c7d6e5f40",
+  "agentId": "agent-crm-assistant",
+  "action": "crm.customers.export",
+  "resource": {
+    "type": "crm.customer_table",
+    "id": "customers",
+    "attributes": {
+      "recordCount": 15000,
+      "destination": "external",
+      "sensitivity": "confidential"
+    }
+  },
+  "context": {
+    "conversationId": "conv-8812",
+    "modelClaim": "User asked for this; it is safe"
+  },
+  "argumentsDigest": "sha256:026b8ce02270651a1852973c791e7d254971874165cd31e0ba20702ca4466d64"
+}

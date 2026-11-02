@@ -1,0 +1,167 @@
+import pg from 'pg';
+import { randomUUID } from 'node:crypto';
+import { canonical, digest, DomainError, type Principal } from './domain.js';
+
+export type Tx = pg.PoolClient;
+export const SYSTEM_TENANT = '00000000-0000-0000-0000-000000000000';
+export class Store {
+  constructor(readonly pool: pg.Pool) {}
+  async transaction<T>(
+    tenantId: string,
+    fn: (tx: Tx) => Promise<T>,
+  ): Promise<T> {
+    const tx = await this.pool.connect();
+    try {
+      await tx.query('BEGIN');
+      await tx.query("SET LOCAL statement_timeout = '5s'");
+      await tx.query("SET LOCAL lock_timeout = '3s'");
+      await tx.query("SET LOCAL idle_in_transaction_session_timeout = '10s'");
+      const tenant = await tx.query(
+        'SELECT id FROM tenants WHERE id=$1 FOR UPDATE',
+        [tenantId],
+      );
+      if (!tenant.rowCount) throw new DomainError(403, 'UNKNOWN_TENANT');
+      const result = await fn(tx);
+      await tx.query('COMMIT');
+      return result;
+    } catch (error) {
+      await tx.query('ROLLBACK');
+      throw error;
+    } finally {
+      tx.release();
+    }
+  }
+  async authenticate(issuer: string, subject: string): Promise<Principal> {
+    const result = await this.pool.query(
+      'SELECT * FROM principals WHERE issuer=$1 AND subject=$2 AND NOT disabled',
+      [issuer, subject],
+    );
+    const row = result.rows[0];
+    if (!row || row.tenant_id === SYSTEM_TENANT)
+      throw new DomainError(401, 'UNKNOWN_PRINCIPAL');
+    return {
+      tenantId: row.tenant_id,
+      id: row.id,
+      issuer: row.issuer,
+      subject: row.subject,
+      kind: row.kind,
+      roles: row.roles,
+      connector: row.connector,
+    };
+  }
+  async currentPrincipal(tx: Tx, principal: Principal) {
+    const result = await tx.query(
+      'SELECT * FROM principals WHERE tenant_id=$1 AND id=$2 AND NOT disabled FOR SHARE',
+      [principal.tenantId, principal.id],
+    );
+    const row = result.rows[0];
+    if (!row) throw new DomainError(401, 'PRINCIPAL_DISABLED');
+    // Compare the snapshot so a privilege revocation between authentication and mutation fails closed.
+    if (
+      canonical(row.roles) !== canonical(principal.roles) ||
+      row.connector !== principal.connector ||
+      row.kind !== principal.kind
+    )
+      throw new DomainError(403, 'IDENTITY_CHANGED');
+  }
+  async authorizeAgent(
+    tx: Tx,
+    principal: Principal,
+    agentId: string,
+    action: string,
+    resourceType: string,
+  ) {
+    await this.currentPrincipal(tx, principal);
+    const grant = await tx.query(
+      `SELECT d.id FROM delegations d JOIN agents a ON a.tenant_id=d.tenant_id AND a.id=d.agent_id
+      WHERE d.tenant_id=$1 AND d.principal_id=$2 AND d.agent_id=$3 AND NOT a.disabled
+      AND d.revoked_at IS NULL AND d.expires_at>clock_timestamp() AND $4=ANY(d.actions) AND $5=ANY(d.resource_types)
+      FOR SHARE OF d,a`,
+      [principal.tenantId, principal.id, agentId, action, resourceType],
+    );
+    if (!grant.rowCount) throw new DomainError(403, 'DELEGATION_REQUIRED');
+  }
+  async rateLimit(principal: Principal) {
+    const result = await this.pool.query(
+      `INSERT INTO rate_buckets(tenant_id,principal_id,bucket,hits)
+      VALUES($1,$2,floor(extract(epoch FROM clock_timestamp())/60)::bigint,1)
+      ON CONFLICT(tenant_id,principal_id) DO UPDATE SET
+      hits=CASE WHEN rate_buckets.bucket=excluded.bucket THEN rate_buckets.hits+1 ELSE 1 END, bucket=excluded.bucket RETURNING hits`,
+      [principal.tenantId, principal.id],
+    );
+    if (Number(result.rows[0]?.hits) > 120)
+      throw new DomainError(429, 'RATE_LIMITED');
+  }
+}
+export async function audit(
+  tx: Tx,
+  tenantId: string,
+  type: string,
+  actorId: string | null,
+  correlationId: string,
+  data: Record<string, unknown>,
+) {
+  const head = (
+    await tx.query(
+      'SELECT audit_seq,audit_head FROM tenants WHERE id=$1 FOR UPDATE',
+      [tenantId],
+    )
+  ).rows[0];
+  const seq = (BigInt(head.audit_seq) + 1n).toString();
+  const event = {
+    id: randomUUID(),
+    tenantId,
+    seq,
+    type,
+    actorId,
+    correlationId,
+    occurredAt: new Date().toISOString(),
+    data,
+    previousHash: head.audit_head as string,
+  };
+  const hash = digest(event);
+  await tx.query(
+    'INSERT INTO audit_events(tenant_id,seq,id,event,previous_hash,hash) VALUES($1,$2,$3,$4,$5,$6)',
+    [tenantId, seq, event.id, event, event.previousHash, hash],
+  );
+  await tx.query('UPDATE tenants SET audit_seq=$2,audit_head=$3 WHERE id=$1', [
+    tenantId,
+    seq,
+    hash,
+  ]);
+}
+export async function verifyAudit(store: Store, tenantId: string) {
+  return store.transaction(tenantId, async (tx) => {
+    let previous = '0'.repeat(64);
+    let seq = 0n;
+    // Keyset batches avoid loading an unbounded event history.
+    for (;;) {
+      const rows = await tx.query(
+        'SELECT * FROM audit_events WHERE tenant_id=$1 AND seq>$2 ORDER BY seq LIMIT 500',
+        [tenantId, seq.toString()],
+      );
+      if (!rows.rowCount) break;
+      for (const row of rows.rows) {
+        seq++;
+        const event = row.event as Record<string, unknown>;
+        if (
+          row.seq !== seq.toString() ||
+          event.seq !== seq.toString() ||
+          event.tenantId !== tenantId ||
+          event.id !== row.id ||
+          event.previousHash !== previous ||
+          row.previous_hash !== previous ||
+          digest(event) !== row.hash
+        )
+          return false;
+        previous = row.hash;
+      }
+    }
+    const head = (
+      await tx.query('SELECT audit_seq,audit_head FROM tenants WHERE id=$1', [
+        tenantId,
+      ])
+    ).rows[0];
+    return head.audit_seq === seq.toString() && head.audit_head === previous;
+  });
+}

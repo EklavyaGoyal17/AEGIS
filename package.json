@@ -40,7 +40,8 @@
     "smoke": "tsx infra/smoke.ts",
     "demo": "npm run demo -w @aegis/demo-agent",
     "probe": "tsx infra/security-probe.ts",
-    "test:e2e:live": "playwright test --config=tests/e2e/playwright.live.config.ts"
+    "test:e2e:live": "playwright test --config=tests/e2e/playwright.live.config.ts",
+    "dev:token": "tsx infra/dev-token.ts"
   },
   "dependencies": {
     "@fastify/rate-limit": "^11.2.1",

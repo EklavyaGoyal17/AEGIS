@@ -6,32 +6,31 @@ This guide walks through running the AEGIS Security Console, executing the safe 
 
 ## 1. Quick Start
 
-### Starting the Security Console
+> [!IMPORTANT]
+> Integrated release: the console defaults to the **live API** through its server-side proxy, and
+> `npm run demo` runs the live, enforced scenario. Follow "Getting started" and "Run the demo" in the root
+> `README.md`. The steps below describe the explicitly labelled **simulation** mode, kept for offline demos.
+
+### Starting the Security Console (simulated data)
 
 ```bash
-cd apps/console
-npm install
-npm run dev
+# from the repository root
+NEXT_PUBLIC_DEMO_MODE=true npm run dev:console
 ```
 
-Open your browser at **`http://localhost:3100`**.
-
-> [!NOTE]
-> By default, the console boots with `NEXT_PUBLIC_DEMO_MODE=true`, presenting an interactive, fully functional dataset with realistic delays and in-memory persistence. To connect to a live backend, set `NEXT_PUBLIC_DEMO_MODE=false` and `NEXT_PUBLIC_AEGIS_API_URL=http://localhost:3200`.
+Open your browser at **`http://localhost:3100`**. The top bar shows "Simulated data".
 
 ---
 
-## 2. Running the Protected Demo Agent
+## 2. Running the Demo Agent simulation
 
 In a separate terminal:
 
 ```bash
-cd apps/demo-agent
-npm install
-npm run demo
+npm run demo:simulated -w @aegis/demo-agent
 ```
 
-The script runs an interactive customer support scenario:
+The script runs an offline customer support scenario (no AEGIS calls, nothing real is authorized):
 
 1. **Safe Ticket Ingestion (`ALLOW`)**: Agent retrieves synthetic ticket `tkt-8821`. Gateway returns `ALLOW` under policy `Allow Customer Data Reads`.
 2. **Customer Profile Read (`ALLOW`)**: Agent checks customer tier. Gateway returns `ALLOW`.

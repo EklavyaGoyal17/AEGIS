@@ -1,24 +1,31 @@
 # AEGIS Demonstration Agent
 
-A safe, self-contained AI-assisted customer support agent that demonstrates AEGIS policy gating, pre-execution evaluation, and human-in-the-loop review.
+A support agent that wants to write notes into a customer system — and can only do so through AEGIS.
 
-## Safety Guarantees
-- **Synthetic Records Only**: Operates solely against in-memory synthetic ticket and customer fixtures in `src/synthetic-data.ts`.
-- **Zero Real Credentials**: Never connects to production databases, payment systems, or external email providers.
-- **Fail-Closed Gatekeeper**: Every simulated action queries the AEGIS Policy Gateway before executing.
+## Live scenario (`npm run demo`) — enforced by the running stack
 
-## Demonstration Steps
-1. **Read-only Action Allowed**: The agent reads a synthetic ticket (`customer-data/tickets/*`), which matches the `ALLOW` rule.
-2. **Unauthorized Export Denied**: The agent attempts an export on `customer-data/pii/*`, which is rejected with `DENY`.
-3. **Sensitive Modification Intercepted**: The agent attempts to alter a customer phone record (`customer-data/account/*`), which yields `REQUIRE_APPROVAL`.
-4. **Human Review in Console**: The reviewer visits the AEGIS Console at `/approvals`, inspects the arguments, and approves or rejects the action.
-5. **Gateway Outcome Enforced**: The downstream mutation only completes if the gatekeeper issues approval resolution.
+`src/live.ts` uses `@aegis/agent-sdk` against the real API and executes only through the trusted gateway. The
+agent holds no credential for the note system; only the gateway does. There is **no simulated fallback**: if
+AEGIS is unreachable or says no, nothing executes.
 
-## Running the Scenario
+1. **Undelegated action denied** — `demo.note.delete` is rejected before evaluation (no delegation).
+2. **Prompt injection ignored** — context claiming `approved: true` still yields `REQUIRE_APPROVAL`.
+3. **Approval required** — `demo.note.create` is held; the gateway refuses to execute while pending.
+4. **Human review** — approve the request in the console at `http://localhost:3100/approvals`
+   (or set `AEGIS_DEMO_AUTO_APPROVE=true` to approve as the seeded reviewer).
+5. **Single execution** — the gateway executes once; a replay returns the same execution; swapped arguments are refused.
+
 ```bash
-# In simulation mode (standalone)
+# From the repository root, with the Compose stack running (see the root README)
 npm run demo
-
-# Against a live AEGIS backend
-AEGIS_MODE=live AEGIS_GATEWAY_URL=http://localhost:3200 npm run demo
 ```
+
+Configuration: `AEGIS_API_URL` (default `http://127.0.0.1:3000`), `AEGIS_GATEWAY_URL` (default
+`http://127.0.0.1:3001`), `AEGIS_AGENT_TOKEN` (production workload token; locally a short-lived token is signed
+with the key from `npm run dev:init`), `AEGIS_DEMO_APPROVAL_WAIT_MS`.
+
+## Offline simulation (`npm run demo:simulated`)
+
+`src/scenario.ts` replays the original customer-support storyline against an in-process simulator using
+synthetic records only. It never contacts AEGIS and authorizes nothing real; it exists to show the narrative
+without a backend.

@@ -1,3 +1,6 @@
+// Re-exported so dependent packages build schemas with this package's TypeBox instance (shared format registry).
+export { Type } from '@sinclair/typebox';
+export type { Static, TSchema } from '@sinclair/typebox';
 export * from './formats.js';
 export * from './limits.js';
 export * from './reason-codes.js';

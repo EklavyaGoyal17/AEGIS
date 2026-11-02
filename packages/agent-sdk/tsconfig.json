@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "forceConsistentCasingInFileNames": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "declaration": true,
+    "sourceMap": true,
+    "noEmit": true,
+    "paths": {
+      "@aegis/contracts": ["../contracts/src/index.ts"],
+      "@aegis/contracts/crypto": ["../contracts/src/crypto/index.ts"],
+      "@aegis/policy-engine": ["../policy-engine/src/index.ts"],
+      "@aegis/agent-sdk": ["./src/index.ts"],
+      "@aegis/agent-sdk/enforcement": ["./src/enforcement.ts"]
+    },
+    "allowImportingTsExtensions": true
+  },
+  "include": ["src", "test", "examples", "vitest.config.ts"]
+}

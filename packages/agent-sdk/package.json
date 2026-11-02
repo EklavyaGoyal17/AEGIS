@@ -1,0 +1,42 @@
+{
+  "name": "@aegis/agent-sdk",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Fail-closed AEGIS authorization client for AI agents, plus a server-side enforcement adapter for protected tools.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./enforcement": {
+      "types": "./dist/enforcement.d.ts",
+      "default": "./dist/enforcement.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "check": "npm run typecheck && npm run test"
+  },
+  "dependencies": {
+    "@aegis/contracts": "file:../contracts"
+  },
+  "devDependencies": {
+    "@aegis/policy-engine": "file:../policy-engine",
+    "@types/node": "24.19.2",
+    "typescript": "5.9.3",
+    "vitest": "3.2.7"
+  }
+}

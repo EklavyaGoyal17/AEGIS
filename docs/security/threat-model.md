@@ -228,16 +228,19 @@ LIMITATION test). Policies should prefer server-derived attributes where possibl
 4. Approval quorum is one approver; no M-of-N.
 5. Audit tail truncation requires external anchoring (backend).
 6. The reference backend (`agent-sdk/test/mock-backend.ts`) is a test double, not a deployable service.
-7. The backend branch currently diverges from the frozen contract in several places
-   (`integration-requirements.md` §4); end-to-end guarantees above hold for the reference backend only until
-   those are resolved.
+7. Human approvals currently expire within five minutes because the backend bounds approval TTL by the
+   decision TTL (`integration-requirements.md` §4, D7 / PR-2).
 8. No coverage percentage is claimed; coverage has not been measured. Test counts below are from real runs.
 
-## 6. Security test inventory (from the runs on 2026-11-03)
+## 6. Security test inventory (integrated system, runs on 2026-11-03)
 
-| Package       | Command            | Result                        |
-| ------------- | ------------------ | ----------------------------- |
-| contracts     | `npm test`         | 148 passed (4 files)          |
-| policy-engine | `npm test`         | 172 passed (4 files)          |
-| agent-sdk     | `npm test`         | 69 passed (4 files)           |
-| policy-engine | `npm run mutation` | 30/30 security mutants killed |
+| Scope                  | Command                                               | Result                                       |
+| ---------------------- | ----------------------------------------------------- | -------------------------------------------- |
+| contracts              | `npm test -w @aegis/contracts`                        | 148 passed                                   |
+| policy-engine          | `npm test -w @aegis/policy-engine`                    | 172 passed                                   |
+| agent-sdk              | `npm test -w @aegis/agent-sdk`                        | 69 passed                                    |
+| security mutants       | `npm run test:mutation`                               | 30/30 killed                                 |
+| backend unit + interop | `npx vitest run --exclude '**/*.integration.test.ts'` | 9 passed                                     |
+| backend ↔ PostgreSQL   | `npm run test:integration`                            | 36 passed (Testcontainers, canonical engine) |
+| live stack (HTTP)      | `npm run probe`                                       | 14/14 checks passed                          |
+| browser, live stack    | `npm run test:e2e:live`                               | 2 passed                                     |

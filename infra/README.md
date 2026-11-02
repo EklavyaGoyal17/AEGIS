@@ -1,6 +1,6 @@
 # AEGIS backend operations
 
-The backend runs on Node 24 with npm and PostgreSQL 17. Work only in `AEGIS-codex` on `agent/codex-backend`. This branch does not include the console, SDK, or canonical packages from other branches.
+The backend runs on Node 24 with npm and PostgreSQL 17 and evaluates every decision with the in-repo `@aegis/policy-engine`. See the root README for the full system (console, SDK, demo agent).
 
 ## Start the isolated local stack
 
@@ -11,6 +11,7 @@ npm ci
 npm run dev:init
 docker compose --env-file .backend-tmp/compose.env -f infra/compose.yaml up --build -d --wait
 npm run smoke
+npm run probe
 docker compose --env-file .backend-tmp/compose.env -f infra/compose.yaml exec -T api node dist/infra/verify-audit.js 10000000-0000-4000-8000-000000000001
 ```
 
@@ -18,7 +19,7 @@ docker compose --env-file .backend-tmp/compose.env -f infra/compose.yaml exec -T
 
 API: `http://127.0.0.1:3000`; gateway: `http://127.0.0.1:3001`. PostgreSQL and the demo tool have no published ports. The seed delegation expires after 24 hours. Seeding never silently renews an expired or revoked grant. A database administrator must explicitly renew a development grant or provision a fresh environment. No real external services are called.
 
-The local policy adapter is an explicitly enabled, fixed integration fixture. It accepts one exact demo policy and requires a human approval for the demo action. It does not interpret the policy DSL. Production mode rejects this fixture. The default production adapter denies missing policies and fails closed for configured policies until the canonical package is installed and built.
+Decisions are made by the canonical `@aegis/policy-engine` (built into the image). The API refuses to start if the engine cannot be loaded. `LocalDemoFixture` (`ENABLE_LOCAL_DEMO_POLICY=true`) is a fixed integration fixture kept only for explicit offline experiments; it does not interpret the policy DSL and production mode rejects it. `npm run probe` checks over HTTP that decisions come from the canonical engine.
 
 Stop while retaining data:
 

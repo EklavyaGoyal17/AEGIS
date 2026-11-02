@@ -3,21 +3,13 @@
 Audience: Codex (backend / gateway / persistence), Antigravity (dashboard / demo / E2E).
 Owner: `agent/claude-security`. Changes to the frozen contract go through "Proposed contract revisions" below.
 
-## 0. Repository layout and root configuration (requests — not applied by security)
+## 0. Repository layout and root configuration
 
-Security owns `packages/contracts`, `packages/policy-engine`, `packages/agent-sdk`, `docs/security`. Each
-package is self-contained (own `package.json`, lockfile, `tsconfig.json`) so it builds without root config.
-
-Requested root changes (for whoever owns root config):
-
-1. Root `package.json` with npm workspaces: `["packages/*", ...]`, Node `>=20.11`.
-2. CI job running, per security package: `npm ci && npm run typecheck && npm test`, plus
-   `npm run check:generated` in `packages/contracts` (fails if OpenAPI/JSON Schema drift from sources).
-3. Build order for production artifacts: `contracts` → `policy-engine` → `agent-sdk`.
-4. `.gitattributes`: `*.yaml text eol=lf`, `*.json text eol=lf` (generated files are compared byte-for-byte).
-
-Until workspaces exist, `policy-engine` and `agent-sdk` resolve `@aegis/contracts` through a `file:` dependency
-for builds and through a source alias for tests.
+Status on `integration/aegis-v1`: done. A single root npm workspace (Node 24, npm 11) contains
+`packages/{contracts,policy-engine,agent-sdk}`, `services/*` and `apps/*`. `npm run build` builds
+contracts → policy-engine → agent-sdk → services. CI (`.github/workflows/ci.yml`) runs every package's tests,
+`check:generated`, the mutation smoke test, DB integration tests, the Compose stack and browser E2E.
+`.gitattributes` normalises all text to LF.
 
 ## 1. Backend (Codex) — MUST
 
@@ -126,28 +118,50 @@ computeAuditEventHash(event)`; serialise appends per tenant (single writer or `S
 - [ ] Contract conformance: all `fixtures/contract-cases.json` cases pass against the live server
 - [ ] Engine fixtures: `packages/policy-engine/fixtures/*.json` produce the expected effects via the HTTP API
 
-## 4. Observed divergences in `agent/codex-backend` (read-only review at `2869183`)
+## 4. Backend divergences: status after integration
 
-Security reviewed the backend branch without modifying it. These differ from the frozen v1 contract and need
-backend changes (or a recorded contract revision) before integration. Listed most-severe first.
+First recorded from a read-only review of `agent/codex-backend` at `2869183`; re-checked on the integrated
+branch (Codex aligned most of them in `eaeef74` and `2638104`).
 
-| #   | Backend behaviour                                                                                                 | Frozen v1 contract                                                                           | Risk                                                                                                                                            |
-| --- | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| D1  | `context` / `resource.attributes` accept arbitrary nested JSON (`z.json()`)                                       | Flat scalar/list maps, ≤ 64 keys, key pattern                                                | Unbounded input; nested data reaching policy evaluation. The engine adapter rejects it (`INVALID_INPUT`), so such requests will always DENY.    |
-| D2  | Arguments digest taken from `context.arguments` (caller-controlled context) with an undomain-separated hex digest | Top-level `argumentsDigest` = `computeArgumentsDigest(args)` (`sha256:` + domain separation) | Digests computed by the SDK / gateway will not match the backend's.                                                                             |
-| D3  | Resolve body `{ requestId, action: APPROVE\|REJECT\|CANCEL }`                                                     | `{ decision, expectedBindingDigest, comment? }`                                              | Without `expectedBindingDigest` an approver can be shown one request and approve another (TOCTOU).                                              |
-| D4  | Policy write body `{ version, document }` with client-chosen version string                                       | `CreatePolicyRequest` with `policyId`, `expectedLatestVersion`, server-assigned versions     | Client-chosen versions can collide or be replayed; no optimistic concurrency.                                                                   |
-| D5  | `action` regex `^[a-z][a-z0-9_.-]{1,127}$`                                                                        | Dotted `resource.operation` with 2–5 segments                                                | Single-segment and `..` actions accepted; wildcard matching assumes segments.                                                                   |
-| D6  | Local `canonical()` accepts `undefined` values / non-plain objects silently                                       | `canonicalJson` rejects them                                                                 | Two semantically different bodies can hash equal (idempotency, audit). Prefer importing `canonicalJson`/`sha256Digest` from `@aegis/contracts`. |
-| D7  | Approval TTL limited to the decision `ttlSeconds` (≤ 300 s)                                                       | Approval TTL 60 s – 7 days, decision TTL ≤ 300 s                                             | Approvals expire before humans can act. The adapter currently clamps to 300 s.                                                                  |
+| #   | Original divergence                                | Status                                                                                                                                                    |
+| --- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D1  | Nested JSON in `context` / `resource.attributes`   | Resolved: flat, bounded attribute schema in `services/api/src/domain.ts`; the live probe rejects body claims (400).                                       |
+| D2  | Arguments digest from `context.arguments`          | Resolved: top-level `argumentsDigest`; `services/api/test/contract-interop.test.ts` proves byte-identical digests.                                        |
+| D3  | Resolve body without `expectedBindingDigest`       | Resolved: required; a mismatch returns 409 (integration test and live probe).                                                                             |
+| D4  | Client-chosen policy versions                      | Resolved: `CreatePolicyRequest` with `expectedLatestVersion`; versions are immutable (database trigger).                                                  |
+| D5  | Loose action regex                                 | Resolved: contract action grammar.                                                                                                                        |
+| D6  | Lenient local canonicalizer                        | Resolved: rejects undefined and non-plain values; a property test proves byte equality with `canonicalJson`.                                              |
+| D7  | Approval TTL bounded by the decision TTL (≤ 300 s) | **Open.** The backend stores approval expiry as `now + ttlSeconds` and caps `ttlSeconds` at 300, so human approvals expire within five minutes. See PR-2. |
 
-The adapter `createBackendPolicyEngine` in `@aegis/policy-engine` implements the backend's `PolicyEngine`
-interface as it exists today, so the backend can switch from `UnavailablePolicyEngine` without waiting for
-the above; D1–D3 should be fixed before any production use.
+The backend's gateway enforces execution server-side by re-deriving the decision from the database
+(`decisionId` + request + arguments) and claiming it once, rather than verifying `ExecutionAuthorization`
+tokens from `@aegis/contracts/crypto`. Both are server-side enforcement; the token design remains available for
+tool services that cannot reach the AEGIS database (PR-3).
 
 ## 5. Proposed contract revisions
 
-None yet. Template:
+### PR-1: Read a policy version's document
+
+- Proposed: integration, 2026-11-03. Compatibility: additive.
+- Change: `GET /v1/policies/{policyId}/versions/{version}` returning `PolicyVersion` (scope `aegis:policies:read`).
+- Rationale: `GET /v1/policies` returns summaries only, so the console cannot display rule bodies.
+- Sign-off: backend [ ] dashboard [ ] security [x]
+
+### PR-2: Decouple approval TTL from decision TTL in the backend engine seam
+
+- Proposed: integration, 2026-11-03. Compatibility: internal (no wire change).
+- Change: carry `approval.ttlSeconds` (60 s – 7 days) in the backend's internal `PolicyResult`; the engine already returns it.
+- Rationale: closes D7.
+- Sign-off: backend [ ] dashboard [ ] security [x]
+
+### PR-3: Issue ExecutionAuthorization tokens for remote tool gateways
+
+- Proposed: integration, 2026-11-03. Compatibility: additive (the field already exists in v1).
+- Change: populate `executionAuthorization` on ALLOW for actions served by gateways outside the AEGIS database boundary.
+- Rationale: lets third-party tool services enforce with `createEnforcementPoint` without database access.
+- Sign-off: backend [ ] dashboard [ ] security [x]
+
+Template:
 
 ```
 ### PR-<n>: <title>

@@ -1,5 +1,6 @@
 'use client';
 
+import { QueryError } from '@/components/ui/query-error';
 import React, { useState, useMemo } from 'react';
 import {
   Activity,
@@ -45,7 +46,7 @@ export default function AgentActivityPage() {
   const [selectedAgent, setSelectedAgent] = useState<string>('ALL');
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
 
-  const { data: auditResponse, isLoading, refetch, isFetching } = useAuditEvents({
+  const { data: auditResponse, isLoading, refetch, isFetching, error } = useAuditEvents({
     pageSize: 50,
   });
 
@@ -90,6 +91,7 @@ export default function AgentActivityPage() {
 
   return (
     <div className="space-y-6">
+      <QueryError error={error} />
       {/* Page Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-white/[.06] pb-5">
         <div>

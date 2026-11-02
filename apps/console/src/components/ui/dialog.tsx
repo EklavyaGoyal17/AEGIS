@@ -61,7 +61,7 @@ export function Dialog({ open, onClose, children, className }: DialogProps) {
       aria-modal="true"
       className={clsx(
         /* reset browser defaults */
-        'max-h-[85vh] w-full max-w-lg rounded-xl border border-surface-200 bg-surface-100 p-0 text-white shadow-2xl',
+        'm-auto max-h-[85vh] w-full max-w-lg rounded-xl border border-surface-200 bg-surface-100 p-0 text-white shadow-2xl',
         'backdrop:bg-black/60 backdrop:backdrop-blur-sm',
         /* open animation */
         'open:animate-in open:fade-in-0 open:zoom-in-95',

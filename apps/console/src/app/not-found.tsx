@@ -7,6 +7,7 @@ export default function NotFound() {
       <Shield className="mb-6 h-16 w-16 text-cyan-500/60" />
 
       <h1 className="text-6xl font-bold tracking-tight text-white">404</h1>
+      <h2 className="mt-2 text-xl font-semibold text-neutral-200">Page Not Found</h2>
 
       <p className="mt-3 text-lg text-neutral-400">
         This page could not be found in the AEGIS console.

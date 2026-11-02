@@ -1,5 +1,6 @@
 'use client';
 
+import { QueryError } from '@/components/ui/query-error';
 import React from 'react';
 import Link from 'next/link';
 import {
@@ -34,13 +35,13 @@ import {
 } from '@/lib/utils/format';
 
 export default function SecurityOverviewPage() {
-  const { data: approvalsData, isLoading: approvalsLoading } = useApprovals({
+  const { data: approvalsData, isLoading: approvalsLoading, error: approvalsError } = useApprovals({
     status: 'PENDING',
   });
-  const { data: auditData, isLoading: auditLoading } = useAuditEvents({
+  const { data: auditData, isLoading: auditLoading, error: auditError } = useAuditEvents({
     pageSize: 10,
   });
-  const { data: policiesData, isLoading: policiesLoading } = usePolicies();
+  const { data: policiesData, isLoading: policiesLoading, error: policiesError } = usePolicies();
 
   const pendingApprovals = approvalsData?.data ?? [];
   const recentEvents = auditData?.data ?? [];
@@ -58,6 +59,7 @@ export default function SecurityOverviewPage() {
 
   return (
     <div className="space-y-6">
+      <QueryError error={approvalsError ?? auditError ?? policiesError} />
       {/* Top Banner / Hero Summary */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-white/[.06] pb-5">
         <div>

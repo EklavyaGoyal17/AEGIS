@@ -1,5 +1,6 @@
 'use client';
 
+import { QueryError } from '@/components/ui/query-error';
 import React, { useState } from 'react';
 import {
   CheckCircle,
@@ -47,7 +48,7 @@ export default function ApprovalsPage() {
   const [resolveReason, setResolveReason] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const { data: approvalsResponse, isLoading, refetch, isFetching } = useApprovals(
+  const { data: approvalsResponse, isLoading, refetch, isFetching, error } = useApprovals(
     selectedStatus === 'ALL' ? undefined : { status: selectedStatus }
   );
 
@@ -79,7 +80,8 @@ export default function ApprovalsPage() {
         request: {
           action: dialogAction,
           reason: resolveReason || (dialogAction === 'APPROVE' ? 'Approved by security reviewer' : 'Rejected per policy guidelines'),
-          reviewerId: 'operator@aegis.internal',
+          // The approver identity comes from the server-verified session, never from the browser.
+          ...(activeApproval.bindingDigest ? { expectedBindingDigest: activeApproval.bindingDigest } : {}),
         },
       });
       handleCloseDialog();
@@ -149,6 +151,8 @@ export default function ApprovalsPage() {
           <Skeleton className="h-56 w-full" />
           <Skeleton className="h-56 w-full" />
         </div>
+      ) : error ? (
+        <QueryError error={error} />
       ) : approvals.length === 0 ? (
         <div className="rounded-lg border border-dashed border-white/[.08] p-12 text-center">
           <CheckCircle className="mx-auto h-12 w-12 text-neutral-500 mb-3" />

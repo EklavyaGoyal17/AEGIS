@@ -56,7 +56,7 @@ export function AppShell({ children, title }: AppShellProps) {
             <button
               onClick={toggleMobileMenu}
               aria-label="Close navigation menu"
-              className="absolute right-2 top-4 rounded-md p-1 text-neutral-400 hover:text-neutral-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500"
+              className="absolute right-2 top-4 z-40 rounded-md p-1 text-neutral-400 hover:text-neutral-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500"
             >
               <X className="h-5 w-5" />
             </button>

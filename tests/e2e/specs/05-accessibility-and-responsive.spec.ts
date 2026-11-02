@@ -3,7 +3,9 @@ import { test, expect } from '@playwright/test';
 test.describe('AEGIS Console — Accessibility & Responsive UX', () => {
   test('should support keyboard navigation across sidebar links', async ({
     page,
+    isMobile,
   }) => {
+    test.skip(isMobile, 'desktop sidebar; the mobile drawer has its own test');
     await page.goto('/');
 
     // Focus on Overview nav link

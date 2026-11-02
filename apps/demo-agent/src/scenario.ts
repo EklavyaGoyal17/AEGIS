@@ -17,7 +17,7 @@ async function runScenario() {
   console.log('🛡️  AEGIS AI AGENT SECURITY ENFORCEMENT DEMONSTRATION');
   console.log('=============================================================\n');
 
-  const gateway = new AegisGatewayAdapter(process.env.AEGIS_GATEWAY_URL || 'http://localhost:3200');
+  const gateway = new AegisGatewayAdapter(); // simulation only — see src/live.ts for the enforced flow
   const agent = new SupportAgent(gateway);
 
   console.log(`🤖 Agent Initialized: [${agent.getAgentId()}] (Synthetic Customer Support)`);

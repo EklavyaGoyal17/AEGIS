@@ -14,36 +14,18 @@ export interface DecisionEvaluationResult {
   expiresAt: string | null;
 }
 
+/**
+ * SIMULATION ONLY. This adapter never contacts AEGIS and never authorizes anything real; it exists to
+ * show the scenario offline. The real, enforced flow is `src/live.ts` (`npm run demo`), which has no
+ * simulated fallback: if AEGIS is unreachable, nothing executes.
+ */
 export class AegisGatewayAdapter {
-  private gatewayUrl: string;
-  private isSimulation: boolean;
-
-  constructor(gatewayUrl: string = 'http://localhost:3200') {
-    this.gatewayUrl = gatewayUrl;
-    this.isSimulation = process.env.AEGIS_MODE !== 'live';
-  }
-
   async evaluateAction(params: {
     agentId: string;
     action: string;
     resource: string;
     context?: Record<string, unknown>;
   }): Promise<DecisionEvaluationResult> {
-    if (!this.isSimulation) {
-      try {
-        const res = await fetch(`${this.gatewayUrl}/v1/decisions/evaluate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(params),
-        });
-        if (res.ok) {
-          return (await res.json()) as DecisionEvaluationResult;
-        }
-      } catch (err) {
-        console.warn('[AEGIS Demo Agent] Gateway offline or unreachable, falling back to simulated policy evaluator.');
-      }
-    }
-
     // Deterministic Simulation Evaluator mirroring canonical AEGIS policy
     const { action, resource } = params;
 

@@ -1,5 +1,6 @@
 'use client';
 
+import { QueryError } from '@/components/ui/query-error';
 import React, { useState } from 'react';
 import {
   FileText,
@@ -42,12 +43,12 @@ export default function PoliciesPage() {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [scope, setScope] = useState('customer-data');
-  const [ruleAction, setRuleAction] = useState('read');
-  const [ruleResource, setRuleResource] = useState('customer-data/*');
+  const [ruleAction, setRuleAction] = useState('demo.note.create');
+  const [ruleResource, setRuleResource] = useState('note');
   const [ruleEffect, setRuleEffect] = useState<DecisionEffect>('ALLOW');
   const [formError, setFormError] = useState<string | null>(null);
 
-  const { data: policiesData, isLoading, refetch } = usePolicies();
+  const { data: policiesData, isLoading, refetch, error } = usePolicies();
   const createMutation = useCreatePolicy();
 
   const policies = policiesData ?? [];
@@ -56,8 +57,8 @@ export default function PoliciesPage() {
     setName('');
     setDescription('');
     setScope('customer-data');
-    setRuleAction('read');
-    setRuleResource('customer-data/*');
+    setRuleAction('demo.note.create');
+    setRuleResource('note');
     setRuleEffect('ALLOW');
     setFormError(null);
     setIsCreating(true);
@@ -108,6 +109,7 @@ export default function PoliciesPage() {
 
   return (
     <div className="space-y-6">
+      <QueryError error={error} />
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-white/[.06] pb-5">
         <div>
@@ -318,8 +320,8 @@ export default function PoliciesPage() {
 
             <div className="grid grid-cols-2 gap-3">
               <Input
-                label="Target Resource Pattern"
-                placeholder="e.g., customer-data/*"
+                label="Resource Type"
+                placeholder="e.g., crm.customer_table or *"
                 value={ruleResource}
                 onChange={(e) => setRuleResource(e.target.value)}
                 required
@@ -327,7 +329,7 @@ export default function PoliciesPage() {
 
               <Input
                 label="Action"
-                placeholder="e.g., read, export, modify"
+                placeholder="e.g., crm.customers.export or crm.*"
                 value={ruleAction}
                 onChange={(e) => setRuleAction(e.target.value)}
                 required

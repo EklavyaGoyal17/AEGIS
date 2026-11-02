@@ -38,6 +38,7 @@ export const ApprovalStatus = z.enum([
   "APPROVED",
   "REJECTED",
   "EXPIRED",
+  "CANCELLED",
   "CONSUMED",
 ]);
 export type ApprovalStatus = z.infer<typeof ApprovalStatus>;
@@ -56,13 +57,20 @@ export const ApprovalSchema = z.object({
   resolvedAt: z.string().datetime().nullable(),
   resolvedBy: z.string().nullable(),
   context: z.record(z.unknown()).optional(),
+  /** What the approver is shown and must echo back when resolving (v1 contract). */
+  bindingDigest: z.string().optional(),
+  argumentsDigest: z.string().nullable().optional(),
+  requestingPrincipalId: z.string().optional(),
 });
 export type Approval = z.infer<typeof ApprovalSchema>;
 
 export const ApprovalResolveRequestSchema = z.object({
   action: z.enum(["APPROVE", "REJECT"]),
   reason: z.string().optional(),
-  reviewerId: z.string().min(1),
+  /** Demo mode only. Against the real API the approver is always derived from the verified token. */
+  reviewerId: z.string().min(1).optional(),
+  /** Required by the real API: the bindingDigest of the approval the reviewer looked at. */
+  expectedBindingDigest: z.string().optional(),
 });
 export type ApprovalResolveRequest = z.infer<typeof ApprovalResolveRequestSchema>;
 
@@ -79,8 +87,15 @@ export const AuditEventTypeSchema = z.enum([
   "DECISION_EVALUATED",
   "APPROVAL_REQUESTED",
   "APPROVAL_RESOLVED",
+  "APPROVAL_CONSUMED",
+  "APPROVAL_EXPIRED",
+  "EXECUTION_AUTHORIZED",
+  "EXECUTION_REJECTED",
   "POLICY_CREATED",
+  "POLICY_ACTIVATED",
   "POLICY_UPDATED",
+  "AUTHENTICATION_FAILED",
+  "AUTHORIZATION_ERROR",
   "AGENT_REGISTERED",
   "AGENT_ACTION_EXECUTED",
   "AGENT_ACTION_BLOCKED",
@@ -122,7 +137,7 @@ export const PolicyRuleSchema = z.object({
 export type PolicyRule = z.infer<typeof PolicyRuleSchema>;
 
 export const PolicySchema = z.object({
-  policyId: z.string().uuid(),
+  policyId: z.string().min(1),
   name: z.string().min(1),
   description: z.string(),
   version: z.string(),

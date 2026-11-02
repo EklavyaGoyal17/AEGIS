@@ -169,7 +169,7 @@ export class MockApiClient {
     // Mutate in-place so future reads reflect the change
     approval.status = newStatus;
     approval.resolvedAt = resolvedAt;
-    approval.resolvedBy = req.reviewerId;
+    approval.resolvedBy = (req.reviewerId ?? "demo-operator");
 
     // Append an audit event for the resolution
     this.auditEvents.unshift({
@@ -185,14 +185,14 @@ export class MockApiClient {
       correlationId: null,
       policyVersion: approval.policyVersion,
       metadata: { resolution: newStatus, reason: req.reason ?? null },
-      actorId: req.reviewerId,
+      actorId: (req.reviewerId ?? "demo-operator"),
     });
 
     return {
       approvalId: approval.approvalId,
       status: newStatus,
       resolvedAt,
-      resolvedBy: req.reviewerId,
+      resolvedBy: (req.reviewerId ?? "demo-operator"),
     };
   }
 

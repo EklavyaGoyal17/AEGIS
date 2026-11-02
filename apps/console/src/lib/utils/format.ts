@@ -57,6 +57,7 @@ export function approvalStatusLabel(status: ApprovalStatus): string {
     APPROVED: "Approved",
     REJECTED: "Rejected",
     EXPIRED: "Expired",
+    CANCELLED: "Cancelled",
     CONSUMED: "Consumed",
   };
   return labels[status];
@@ -68,8 +69,15 @@ export function auditEventLabel(type: AuditEventType): string {
     DECISION_EVALUATED: "Decision Evaluated",
     APPROVAL_REQUESTED: "Approval Requested",
     APPROVAL_RESOLVED: "Approval Resolved",
+    APPROVAL_CONSUMED: "Approval Consumed",
+    APPROVAL_EXPIRED: "Approval Expired",
+    EXECUTION_AUTHORIZED: "Execution Authorized",
+    EXECUTION_REJECTED: "Execution Rejected",
     POLICY_CREATED: "Policy Created",
+    POLICY_ACTIVATED: "Policy Activated",
     POLICY_UPDATED: "Policy Updated",
+    AUTHENTICATION_FAILED: "Authentication Failed",
+    AUTHORIZATION_ERROR: "Authorization Error",
     AGENT_REGISTERED: "Agent Registered",
     AGENT_ACTION_EXECUTED: "Action Executed",
     AGENT_ACTION_BLOCKED: "Action Blocked",
@@ -96,6 +104,7 @@ export function statusToVariant(
     APPROVED: "allow",
     REJECTED: "deny",
     EXPIRED: "expired",
+    CANCELLED: "default",
     CONSUMED: "default",
   };
   return map[status];

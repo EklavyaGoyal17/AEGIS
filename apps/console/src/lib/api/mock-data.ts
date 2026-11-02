@@ -85,11 +85,11 @@ export const agentIdentities = [
 ] as const;
 
 // ─── Helper ─────────────────────────────────────────────────────
+/** Demo data is anchored to load time so pending items stay pending whenever the demo runs. */
+const BASE_TIME = Date.now();
 /** Offset minutes from the base timestamp */
 function ts(minutesOffset: number): string {
-  const base = new Date("2026-11-02T12:00:00Z");
-  base.setMinutes(base.getMinutes() + minutesOffset);
-  return base.toISOString();
+  return new Date(BASE_TIME + minutesOffset * 60_000).toISOString();
 }
 
 const POLICY_VERSION = "1.3.0";

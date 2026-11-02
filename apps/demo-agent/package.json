@@ -2,20 +2,21 @@
   "name": "@aegis/demo-agent",
   "version": "0.1.0",
   "private": true,
-  "description": "Safe synthetic AI support agent demonstrating AEGIS security policies and human approval gates",
-  "main": "dist/index.js",
+  "type": "module",
+  "description": "Demo support agent: a live flow enforced by the running AEGIS stack, plus an offline simulation",
   "scripts": {
-    "build": "tsc",
-    "start": "ts-node src/index.ts",
-    "demo": "ts-node src/scenario.ts",
+    "demo": "tsx src/live.ts",
+    "demo:simulated": "tsx src/scenario.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "clsx": "^2.1.1"
+    "@aegis/agent-sdk": "*",
+    "@aegis/contracts": "*",
+    "jose": "^6.2.15"
   },
   "devDependencies": {
-    "typescript": "^5.8.0",
     "@types/node": "^22.15.0",
-    "ts-node": "^10.9.2"
+    "tsx": "^4.23.15",
+    "typescript": "^5.8.0"
   }
 }

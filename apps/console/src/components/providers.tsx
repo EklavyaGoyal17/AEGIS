@@ -1,12 +1,6 @@
 'use client';
 
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useMemo,
-  useState,
-} from 'react';
+import { createContext, useContext, useMemo } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 /* ------------------------------------------------------------------ */
@@ -15,12 +9,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 interface DemoModeContextValue {
   isDemoMode: boolean;
-  setDemoMode: (v: boolean) => void;
 }
 
 const DemoModeContext = createContext<DemoModeContextValue>({
-  isDemoMode: true,
-  setDemoMode: () => {},
+  isDemoMode: process.env.NEXT_PUBLIC_DEMO_MODE === 'true',
 });
 
 export function useDemoMode(): DemoModeContextValue {
@@ -63,21 +55,10 @@ function getQueryClient(): QueryClient {
 export function Providers({ children }: { children: React.ReactNode }) {
   const queryClient = getQueryClient();
 
-  const [isDemoMode, setIsDemoMode] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      return process.env.NEXT_PUBLIC_DEMO_MODE !== 'false';
-    }
-    return true;
-  });
-
-  const setDemoMode = useCallback((v: boolean) => {
-    setIsDemoMode(v);
-  }, []);
-
-  const demoValue = useMemo<DemoModeContextValue>(
-    () => ({ isDemoMode, setDemoMode }),
-    [isDemoMode, setDemoMode],
-  );
+  // Fixed at build time and identical on server and client (no hydration mismatch). It must match
+  // getApiClient(), which picks the mock or real client from the same variable.
+  const isDemoMode = process.env.NEXT_PUBLIC_DEMO_MODE === 'true';
+  const demoValue = useMemo<DemoModeContextValue>(() => ({ isDemoMode }), [isDemoMode]);
 
   return (
     <QueryClientProvider client={queryClient}>

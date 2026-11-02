@@ -7,7 +7,10 @@ test.describe('AEGIS Console — Security Operations Overview', () => {
 
   test('should render the shell layout, environment indicator, and page title', async ({
     page,
+    isMobile,
   }) => {
+    // The persistent sidebar (brand) is desktop-only; mobile uses the drawer covered in spec 05.
+    test.skip(isMobile, 'desktop sidebar layout');
     // Brand and title
     await expect(page.getByText('AEGIS', { exact: true })).toBeVisible();
     await expect(

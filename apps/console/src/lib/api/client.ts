@@ -1,35 +1,43 @@
 /**
- * AEGIS API Client — Typed HTTP client for the AEGIS Policy Engine V1 API
+ * AEGIS API Client — typed HTTP client for the AEGIS v1 API.
  *
- * All requests use fetch() with Zod schema validation on responses.
- * Network and API errors are normalized into a consistent `AegisApiError` class.
+ * The browser talks only to the console's own origin (`/api/v1/*`). That route is a server-side proxy
+ * (src/app/api/v1/[...path]/route.ts) which attaches the operator's credential; the browser never holds
+ * an AEGIS token. Every response is validated against the frozen v1 contract and mapped to view models.
  */
 
 import { z } from "zod";
 import type {
-  EvaluationRequest,
-  DecisionResponse,
   Approval,
   ApprovalFilters,
   ApprovalResolveRequest,
   ApprovalResolveResponse,
   AuditEvent,
   AuditFilters,
-  Policy,
   CreatePolicyRequest,
+  DecisionResponse,
+  EvaluationRequest,
   HealthResponse,
   PaginatedResponse,
+  Policy,
 } from "@/lib/api/types";
 import {
-  DecisionResponseSchema,
-  ApprovalSchema,
-  ApprovalResolveResponseSchema,
-  AuditEventSchema,
-  PolicySchema,
-  HealthResponseSchema,
-  PaginatedResponseSchema,
-  ApiErrorSchema,
-} from "@/lib/api/types";
+  toApproval,
+  toAuditEvent,
+  toCreatePolicyRequest,
+  toDecision,
+  toHealth,
+  toPage,
+  toPolicy,
+  WireApproval,
+  WireAuditEvent,
+  WireDecision,
+  WireErrorEnvelope,
+  WireHealth,
+  wirePage,
+  WirePolicy,
+  WirePolicyVersion,
+} from "@/lib/api/contract";
 
 // ─── Error class ─────────────────────────────────────────────────
 export class AegisApiError extends Error {
@@ -51,193 +59,201 @@ export class AegisApiError extends Error {
   }
 }
 
+const newRequestId = (): string =>
+  typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : "00000000-0000-4000-8000-000000000000".replace(/0/g, () => Math.floor(Math.random() * 16).toString(16));
+
 // ─── Client ──────────────────────────────────────────────────────
 export class AegisApiClient {
   private readonly baseUrl: string;
 
-  constructor(baseUrl: string) {
-    // Strip trailing slash for consistency
+  /** `baseUrl` defaults to the console's own origin, where the authenticated proxy lives. */
+  constructor(baseUrl: string = "") {
     this.baseUrl = baseUrl.replace(/\/+$/, "");
   }
 
-  // ── Internal helpers ─────────────────────────────────────────
-
-  /**
-   * Build a URL with optional query parameters.
-   * `undefined` and `null` values are omitted.
-   */
   private buildUrl(
     path: string,
     params?: Record<string, string | number | boolean | undefined | null>,
   ): string {
-    const url = new URL(`${this.baseUrl}${path}`);
-
-    if (params) {
-      for (const [key, value] of Object.entries(params)) {
-        if (value !== undefined && value !== null) {
-          url.searchParams.set(key, String(value));
-        }
-      }
+    const origin =
+      this.baseUrl ||
+      (typeof window !== "undefined" ? window.location.origin : "http://localhost:3100");
+    const url = new URL(`${origin}${path}`);
+    for (const [key, value] of Object.entries(params ?? {})) {
+      if (value !== undefined && value !== null) url.searchParams.set(key, String(value));
     }
-
     return url.toString();
   }
 
-  /**
-   * Execute a fetch request with standard headers, error handling,
-   * and Zod schema validation on the response body.
-   */
-  private async request<T>(
+  private async request<W, V>(
     url: string,
-    schema: z.ZodType<T>,
+    schema: z.ZodType<W>,
+    map: (wire: W) => V,
     init: RequestInit = {},
-  ): Promise<T> {
+  ): Promise<V> {
     const headers: Record<string, string> = {
-      "Content-Type": "application/json",
       Accept: "application/json",
+      ...(init.body ? { "Content-Type": "application/json" } : {}),
       ...((init.headers as Record<string, string>) ?? {}),
     };
 
     let response: Response;
-
     try {
-      response = await fetch(url, { ...init, headers });
+      response = await fetch(url, { ...init, headers, credentials: "same-origin" });
     } catch (err) {
       throw new AegisApiError(
-        err instanceof Error
-          ? `Network error: ${err.message}`
-          : "An unknown network error occurred",
+        err instanceof Error ? `Network error: ${err.message}` : "An unknown network error occurred",
         0,
         "NETWORK_ERROR",
       );
     }
 
     if (!response.ok) {
-      let apiError: { error: string; message: string; details?: Record<string, unknown> } | null =
-        null;
-
+      let envelope: z.infer<typeof WireErrorEnvelope> | null = null;
       try {
-        const body: unknown = await response.json();
-        const parsed = ApiErrorSchema.safeParse(body);
-        if (parsed.success) {
-          apiError = parsed.data;
-        }
+        const parsed = WireErrorEnvelope.safeParse(await response.json());
+        if (parsed.success) envelope = parsed.data;
       } catch {
-        // Body is not JSON — fall through to generic error
+        // Body is not JSON — fall through to a generic error.
       }
-
       throw new AegisApiError(
-        apiError?.message ?? `HTTP ${response.status}: ${response.statusText}`,
+        envelope?.error.message ?? `HTTP ${response.status}: ${response.statusText}`,
         response.status,
-        apiError?.error ?? "HTTP_ERROR",
-        apiError?.details,
+        envelope?.error.code ?? "HTTP_ERROR",
+        envelope ? { correlationId: envelope.error.correlationId, retryable: envelope.error.retryable } : undefined,
       );
     }
 
-    const body: unknown = await response.json();
-    const parsed = schema.safeParse(body);
-
+    const parsed = schema.safeParse(await response.json());
     if (!parsed.success) {
       throw new AegisApiError(
-        `Response validation failed: ${parsed.error.message}`,
+        `Response does not match the AEGIS v1 contract: ${parsed.error.message}`,
         response.status,
-        "VALIDATION_ERROR",
+        "CONTRACT_VIOLATION",
         { zodErrors: parsed.error.flatten() },
       );
     }
-
-    return parsed.data;
+    return map(parsed.data);
   }
 
   // ── Decisions ────────────────────────────────────────────────
 
+  /**
+   * Console-side evaluation (e.g. "test this request"). Agents evaluate with their own credentials via
+   * the SDK; the console's credential is a human operator's.
+   */
   async evaluateDecision(req: EvaluationRequest): Promise<DecisionResponse> {
-    return this.request(
-      this.buildUrl("/api/v1/decisions/evaluate"),
-      DecisionResponseSchema,
-      { method: "POST", body: JSON.stringify(req) },
-    );
+    const [type, ...rest] = req.resource.split("/");
+    return this.request(this.buildUrl("/api/v1/decisions/evaluate"), WireDecision, toDecision, {
+      method: "POST",
+      body: JSON.stringify({
+        requestId: newRequestId(),
+        agentId: req.agentId,
+        action: req.action,
+        resource: { type, id: rest.join("/") || type, attributes: {} },
+        context: req.context ?? {},
+      }),
+    });
   }
 
   // ── Approvals ────────────────────────────────────────────────
 
-  async getApprovals(
-    filters?: ApprovalFilters,
-  ): Promise<PaginatedResponse<Approval>> {
+  async getApprovals(filters?: ApprovalFilters): Promise<PaginatedResponse<Approval>> {
     return this.request(
       this.buildUrl("/api/v1/approvals", {
         status: filters?.status,
         agentId: filters?.agentId,
-        page: filters?.page,
-        pageSize: filters?.pageSize,
+        limit: Math.min(filters?.pageSize ?? 50, 200),
       }),
-      PaginatedResponseSchema(ApprovalSchema),
+      wirePage(WireApproval),
+      (page) => toPage(page, toApproval),
     );
   }
 
-  async resolveApproval(
-    approvalId: string,
-    req: ApprovalResolveRequest,
-  ): Promise<ApprovalResolveResponse> {
+  async resolveApproval(approvalId: string, req: ApprovalResolveRequest): Promise<ApprovalResolveResponse> {
+    if (!req.expectedBindingDigest) {
+      throw new AegisApiError(
+        "Cannot resolve: the reviewed approval's binding digest is missing.",
+        0,
+        "BINDING_DIGEST_REQUIRED",
+      );
+    }
     return this.request(
       this.buildUrl(`/api/v1/approvals/${encodeURIComponent(approvalId)}/resolve`),
-      ApprovalResolveResponseSchema,
-      { method: "POST", body: JSON.stringify(req) },
+      WireApproval,
+      (a) => ({
+        approvalId: a.approvalId,
+        status: a.status,
+        resolvedAt: a.resolution?.resolvedAt ?? new Date().toISOString(),
+        resolvedBy: a.resolution?.resolvedBy ?? "",
+      }),
+      {
+        method: "POST",
+        headers: { "Idempotency-Key": newRequestId() },
+        body: JSON.stringify({
+          decision: req.action,
+          expectedBindingDigest: req.expectedBindingDigest,
+          ...(req.reason ? { comment: req.reason.slice(0, 2000) } : {}),
+        }),
+      },
     );
   }
 
   // ── Audit Events ─────────────────────────────────────────────
 
-  async getAuditEvents(
-    filters?: AuditFilters,
-  ): Promise<PaginatedResponse<AuditEvent>> {
+  async getAuditEvents(filters?: AuditFilters): Promise<PaginatedResponse<AuditEvent>> {
     return this.request(
       this.buildUrl("/api/v1/audit/events", {
-        startDate: filters?.startDate,
-        endDate: filters?.endDate,
+        from: filters?.startDate,
+        to: filters?.endDate,
         agentId: filters?.agentId,
-        action: filters?.action,
-        effect: filters?.effect,
-        correlationId: filters?.correlationId,
-        eventType: filters?.eventType,
-        page: filters?.page,
-        pageSize: filters?.pageSize,
+        type: filters?.eventType,
+        limit: Math.min(filters?.pageSize ?? 50, 200),
       }),
-      PaginatedResponseSchema(AuditEventSchema),
+      wirePage(WireAuditEvent),
+      (page) => toPage(page, toAuditEvent),
     );
   }
 
   // ── Policies ─────────────────────────────────────────────────
 
   async getPolicies(): Promise<Policy[]> {
-    return this.request(
-      this.buildUrl("/api/v1/policies"),
-      z.array(PolicySchema),
+    return this.request(this.buildUrl("/api/v1/policies", { limit: 200 }), wirePage(WirePolicy), (page) =>
+      page.items.map(toPolicy),
     );
   }
 
   async createPolicy(req: CreatePolicyRequest): Promise<Policy> {
+    const body = toCreatePolicyRequest(req);
     return this.request(
       this.buildUrl("/api/v1/policies"),
-      PolicySchema,
-      { method: "POST", body: JSON.stringify(req) },
+      WirePolicyVersion,
+      (v) => ({
+        policyId: v.policyId,
+        name: req.name,
+        description: req.description,
+        version: `${v.version}`,
+        enabled: v.state === "ACTIVE",
+        rules: req.rules,
+        createdAt: v.createdAt,
+        updatedAt: v.createdAt,
+        createdBy: v.createdBy,
+      }),
+      { method: "POST", headers: { "Idempotency-Key": newRequestId() }, body: JSON.stringify(body) },
     );
   }
 
   // ── Health ───────────────────────────────────────────────────
 
   async getHealth(): Promise<HealthResponse> {
-    return this.request(
-      this.buildUrl("/api/v1/health"),
-      HealthResponseSchema,
-    );
+    return this.request(this.buildUrl("/api/v1/health"), WireHealth, toHealth);
   }
 }
 
 // ─── Singleton instance ──────────────────────────────────────────
-const apiBaseUrl =
-  typeof process !== "undefined"
-    ? process.env.NEXT_PUBLIC_AEGIS_API_URL ?? "http://localhost:3100"
-    : "http://localhost:3100";
-
-export const aegisApi = new AegisApiClient(apiBaseUrl);
+// Same-origin by default; NEXT_PUBLIC_AEGIS_API_URL only overrides where the console proxy is hosted.
+export const aegisApi = new AegisApiClient(
+  typeof process !== "undefined" ? (process.env.NEXT_PUBLIC_AEGIS_API_URL ?? "") : "",
+);

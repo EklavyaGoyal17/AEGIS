@@ -39,7 +39,8 @@
     "dev:seed": "tsx infra/seed.ts",
     "smoke": "tsx infra/smoke.ts",
     "demo": "npm run demo -w @aegis/demo-agent",
-    "probe": "tsx infra/security-probe.ts"
+    "probe": "tsx infra/security-probe.ts",
+    "test:e2e:live": "playwright test --config=tests/e2e/playwright.live.config.ts"
   },
   "dependencies": {
     "@fastify/rate-limit": "^11.2.1",

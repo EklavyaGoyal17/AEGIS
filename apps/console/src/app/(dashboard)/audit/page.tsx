@@ -1,5 +1,6 @@
 'use client';
 
+import { QueryError } from '@/components/ui/query-error';
 import React, { useState, useMemo } from 'react';
 import {
   ScrollText,
@@ -43,7 +44,7 @@ export default function AuditInvestigationPage() {
   const [selectedType, setSelectedType] = useState<string>('ALL');
   const [selectedEvent, setSelectedEvent] = useState<AuditEvent | null>(null);
 
-  const { data: auditResponse, isLoading, refetch, isFetching } = useAuditEvents({
+  const { data: auditResponse, isLoading, refetch, isFetching, error } = useAuditEvents({
     pageSize: 100,
   });
 
@@ -70,6 +71,7 @@ export default function AuditInvestigationPage() {
 
   return (
     <div className="space-y-6">
+      <QueryError error={error} />
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-white/[.06] pb-5">
         <div>
@@ -123,12 +125,20 @@ export default function AuditInvestigationPage() {
                 onChange={(e) => setSelectedType(e.target.value)}
                 options={[
                   { value: 'ALL', label: 'All Event Types' },
-                  { value: 'DECISION_EVALUATED', label: 'DECISION_EVALUATED' },
-                  { value: 'APPROVAL_REQUESTED', label: 'APPROVAL_REQUESTED' },
-                  { value: 'APPROVAL_RESOLVED', label: 'APPROVAL_RESOLVED' },
-                  { value: 'POLICY_CREATED', label: 'POLICY_CREATED' },
-                  { value: 'AGENT_ACTION_EXECUTED', label: 'AGENT_ACTION_EXECUTED' },
-                  { value: 'AGENT_ACTION_BLOCKED', label: 'AGENT_ACTION_BLOCKED' },
+                  // v1 contract audit event types (packages/contracts AuditEventType)
+                  ...[
+                    'DECISION_EVALUATED',
+                    'APPROVAL_REQUESTED',
+                    'APPROVAL_RESOLVED',
+                    'APPROVAL_CONSUMED',
+                    'APPROVAL_EXPIRED',
+                    'EXECUTION_AUTHORIZED',
+                    'EXECUTION_REJECTED',
+                    'POLICY_CREATED',
+                    'POLICY_ACTIVATED',
+                    'AUTHENTICATION_FAILED',
+                    'AUTHORIZATION_ERROR',
+                  ].map((value) => ({ value, label: value })),
                 ]}
               />
             </div>

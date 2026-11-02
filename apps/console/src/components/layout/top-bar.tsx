@@ -16,7 +16,7 @@ interface TopBarProps {
 }
 
 export function TopBar({ title, onMenuToggle }: TopBarProps) {
-  const { isDemoMode, setDemoMode } = useDemoMode();
+  const { isDemoMode } = useDemoMode();
 
   return (
     <header className="sticky top-0 z-20 flex flex-col">
@@ -48,32 +48,24 @@ export function TopBar({ title, onMenuToggle }: TopBarProps) {
 
         {/* Right: controls */}
         <div className="flex items-center gap-4">
-          {/* Demo mode toggle */}
-          <label className="flex cursor-pointer items-center gap-2 text-xs text-neutral-400">
-            <span className="hidden sm:inline">Demo</span>
-            <button
-              role="switch"
-              aria-checked={isDemoMode}
-              aria-label="Toggle demo mode"
-              onClick={() => setDemoMode(!isDemoMode)}
-              className={clsx(
-                'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500',
-                isDemoMode ? 'bg-amber-600' : 'bg-neutral-700',
-              )}
-            >
-              <span
-                className={clsx(
-                  'inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform',
-                  isDemoMode ? 'translate-x-[18px]' : 'translate-x-[3px]',
-                )}
-              />
-            </button>
-          </label>
-
-          {/* Tenant name */}
-          <span className="hidden text-sm font-medium text-neutral-300 md:inline">
-            ACME Corp
+          {/* Data source indicator. Read-only: the source is fixed at build time (NEXT_PUBLIC_DEMO_MODE)
+              so the UI can never claim live data while showing simulated data, or vice versa. */}
+          <span
+            className={clsx(
+              'rounded-full px-2 py-0.5 text-xs font-medium',
+              isDemoMode ? 'bg-amber-600/20 text-amber-300' : 'bg-emerald-600/20 text-emerald-300',
+            )}
+            data-testid="data-source"
+          >
+            {isDemoMode ? 'Simulated data' : 'Live API'}
           </span>
+
+          {/* Tenant name (demo fixture only; live tenancy comes from the operator's credential) */}
+          {isDemoMode && (
+            <span className="hidden text-sm font-medium text-neutral-300 md:inline">
+              ACME Corp
+            </span>
+          )}
 
           {/* User avatar */}
           <div

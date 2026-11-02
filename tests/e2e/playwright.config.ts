@@ -8,7 +8,8 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  // Next.js dev compiles routes on first hit; limited parallelism avoids spurious navigation timeouts.
+  workers: process.env.CI ? 1 : 2,
   reporter: [['html', { outputFolder: '../../playwright-report' }], ['list']],
   use: {
     baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:3100',
@@ -30,9 +31,13 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'npm run dev --workspace=apps/console',
+    // A production build avoids on-demand compilation timeouts and tests what actually ships.
+    command:
+      'npm run build -w @aegis/console && npm run start -w @aegis/console',
+    // Run from the repository root so npm resolves the workspace.
+    cwd: '../..',
     url: 'http://localhost:3100',
     reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
+    timeout: 300_000,
   },
 });

@@ -114,6 +114,7 @@ export class Gateway {
         input.request.agentId,
         input.request.action,
         input.request.resource.type,
+        input.request.resource.id,
       );
       const decision = (
         await tx.query<DecisionRow>(

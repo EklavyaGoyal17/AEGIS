@@ -18,7 +18,7 @@ docker compose --env-file .backend-tmp/compose.env -f infra/compose.yaml exec -T
 
 API: `http://127.0.0.1:3000`; gateway: `http://127.0.0.1:3001`. PostgreSQL and the demo tool have no published ports. The seed delegation expires after 24 hours. Seeding never silently renews an expired or revoked grant. A database administrator must explicitly renew a development grant or provision a fresh environment. No real external services are called.
 
-The local policy adapter is an explicitly enabled, fixed integration fixture. It accepts one exact demo policy and requires a human approval for the demo action. It does not interpret the policy DSL. Production mode rejects this fixture. The default production adapter denies missing policies and fails closed for configured policies until a canonical adapter is installed.
+The local policy adapter is an explicitly enabled, fixed integration fixture. It accepts one exact demo policy and requires a human approval for the demo action. It does not interpret the policy DSL. Production mode rejects this fixture. The default production adapter denies missing policies and fails closed for configured policies until the canonical package is installed and built.
 
 Stop while retaining data:
 
@@ -46,13 +46,14 @@ npm run lint
 npm run typecheck
 npm test
 $env:AEGIS_CONTRACT_SCHEMA = 'path/to/packages/contracts/schemas/aegis-v1.schema.json'
+$env:AEGIS_CANONICAL_ENGINE_MODULE = 'file:///path/to/packages/policy-engine/dist/index.js'
 npm run test:integration
 npm run build
 npm audit --omit=dev --audit-level=moderate
 npm audit --audit-level=high
 ```
 
-Integration tests launch a disposable PostgreSQL Testcontainer and an isolated real HTTP demo service. They exercise invalid/expired credentials, tenant isolation, grants, duplicate requests, approval authority and expiry, concurrent resolution/consumption, exact argument binding, policy failures/timeouts, malicious tool responses, injected database failures before and after a side effect, crash recovery, database privileges, and audit tampering. The canonical schema test is explicitly skipped when `AEGIS_CONTRACT_SCHEMA` is absent. CI checks out the published contract at a pinned revision and sets this variable; it does not claim that the other branches have been merged.
+Integration tests launch a disposable PostgreSQL Testcontainer and an isolated real HTTP demo service. They exercise invalid/expired credentials, tenant isolation, grants, duplicate requests, approval authority and expiry, concurrent resolution/consumption, exact argument binding, policy failures/timeouts, malicious tool responses, injected database failures before and after a side effect, crash recovery, database privileges, and audit tampering. The canonical schema test is explicitly skipped when `AEGIS_CONTRACT_SCHEMA` is absent; actual-engine tests are skipped when `AEGIS_CANONICAL_ENGINE_MODULE` is absent. CI checks out the published contract at a pinned revision and sets both variables; it does not claim that the other branches have been merged.
 
 GitHub Actions also build the container, start Compose, run the smoke test, scan dependencies and scan Git history with Gitleaks. Production dependency audit is clean at validation time. Development tooling currently has moderate transitive glob/minimatch advisories; no high/critical advisories were reported. CI reports these and fails on high/critical development advisories or any moderate production advisory. Do not apply the scanner's suggested major downgrades or `--force` automatically.
 

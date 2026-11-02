@@ -17,6 +17,7 @@ export async function migrate(pool: pg.Pool) {
       '001_authorization',
       '002_contract_alignment',
       '003_runtime_locks',
+      '004_engine_context',
     ]) {
       const source = (
         await readFile(

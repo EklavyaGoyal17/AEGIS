@@ -37,8 +37,8 @@ try {
       ],
     );
     await tx.query(
-      'INSERT INTO agents(tenant_id,id) VALUES($1,$2) ON CONFLICT DO NOTHING',
-      [DEMO_TENANT, 'demo-agent'],
+      'INSERT INTO agents(tenant_id,id,owner_principal_id) VALUES($1,$2,$3) ON CONFLICT(tenant_id,id) DO UPDATE SET owner_principal_id=COALESCE(agents.owner_principal_id,excluded.owner_principal_id)',
+      [DEMO_TENANT, 'demo-agent', DEMO_MACHINE],
     );
     await tx.query(
       `INSERT INTO delegations(tenant_id,id,principal_id,agent_id,actions,resource_types,expires_at) VALUES($1,$2,$3,'demo-agent',ARRAY['demo.note.create'],ARRAY['note'],now()+interval '24 hours') ON CONFLICT(tenant_id,principal_id,agent_id) DO NOTHING`,

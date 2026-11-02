@@ -1,7 +1,12 @@
 FROM node:24-alpine AS build
 WORKDIR /app
+COPY package.json package-lock.json ./
+COPY services/api/package.json ./services/api/package.json
+COPY services/gateway/package.json ./services/gateway/package.json
+COPY services/demo-tool/package.json ./services/demo-tool/package.json
+RUN npm ci --ignore-scripts
 COPY . .
-RUN npm ci --ignore-scripts && npm run build
+RUN npm run build
 
 FROM node:24-alpine
 ENV NODE_ENV=production

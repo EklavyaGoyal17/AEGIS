@@ -19,11 +19,16 @@ jobs:
       - run: npm test
       - uses: actions/checkout@v4
         with:
-          ref: 69d658f8b93914cfd67f86d4a13f61cbc5f6de0e
+          ref: 74774148633aae841d9351b237c5f7dfe20f9edc
           path: .backend-tmp/canonical
+      - run: npm --prefix .backend-tmp/canonical/packages/contracts ci
+      - run: npm --prefix .backend-tmp/canonical/packages/contracts run build
+      - run: npm --prefix .backend-tmp/canonical/packages/policy-engine ci
+      - run: npm --prefix .backend-tmp/canonical/packages/policy-engine run build
       - run: npm run test:integration
         env:
           AEGIS_CONTRACT_SCHEMA: .backend-tmp/canonical/packages/contracts/schemas/aegis-v1.schema.json
+          AEGIS_CANONICAL_ENGINE_MODULE: file://${{ github.workspace }}/.backend-tmp/canonical/packages/policy-engine/dist/index.js
       - run: npm audit --omit=dev --audit-level=moderate
       - run: npm audit --audit-level=high
       - run: npm run build

@@ -7,6 +7,7 @@ import { identityFromEnv } from './identity.js';
 import { UnavailablePolicyEngine, type PolicyEngine } from './domain.js';
 import { maintenance } from './maintenance.js';
 import { DemoNoteAdapter, Gateway } from '../../gateway/src/gateway.js';
+import { canonicalPolicyEngine } from './canonical-engine.js';
 
 export async function startServer(surface: 'api' | 'gateway') {
   const databaseUrl = z.string().url().parse(process.env.DATABASE_URL);
@@ -23,6 +24,26 @@ export async function startServer(surface: 'api' | 'gateway') {
     process.stderr.write('Database pool connection lost\n');
   });
   let engine: PolicyEngine = new UnavailablePolicyEngine();
+  const store = new Store(pool);
+  if (
+    process.env.ENABLE_LOCAL_DEMO_POLICY !== 'true' &&
+    !process.env.AEGIS_POLICY_ADAPTER_MODULE
+  ) {
+    const specifier =
+      process.env.AEGIS_CANONICAL_ENGINE_MODULE ?? '@aegis/policy-engine';
+    try {
+      engine = await canonicalPolicyEngine(store, specifier);
+    } catch (error) {
+      if (
+        process.env.AEGIS_CANONICAL_ENGINE_MODULE ||
+        !(error instanceof Error) ||
+        !('code' in error) ||
+        error.code !== 'ERR_MODULE_NOT_FOUND' ||
+        !error.message.includes('@aegis/policy-engine')
+      )
+        throw error;
+    }
+  }
   if (process.env.ENABLE_LOCAL_DEMO_POLICY === 'true') {
     const { LocalDemoFixture } =
       await import('../../../infra/local-demo-policy.js');
@@ -41,7 +62,7 @@ export async function startServer(surface: 'api' | 'gateway') {
     )
       throw new Error('Invalid policy adapter module');
   }
-  const authorization = new Authorization(new Store(pool), engine);
+  const authorization = new Authorization(store, engine);
   const identity = await identityFromEnv();
   const gateway =
     surface === 'gateway'

@@ -127,6 +127,7 @@ export class Authorization {
         request.agentId,
         request.action,
         request.resource.type,
+        request.resource.id,
       );
       const replay = await this.replay(
         tx,
@@ -151,7 +152,7 @@ export class Authorization {
       if (request.approvalId) {
         const row = (
           await tx.query(
-            `SELECT d.*,a.state FROM approvals a JOIN decisions d ON d.tenant_id=a.tenant_id AND d.id=a.decision_id WHERE a.tenant_id=$1 AND a.id=$2 AND d.principal_id=$3`,
+            `SELECT d.*,a.state,a.required_role,a.prohibit_self,a.resolved_by FROM approvals a JOIN decisions d ON d.tenant_id=a.tenant_id AND d.id=a.decision_id WHERE a.tenant_id=$1 AND a.id=$2 AND d.principal_id=$3`,
             [p.tenantId, request.approvalId, p.id],
           )
         ).rows[0];
@@ -173,11 +174,27 @@ export class Authorization {
         const fresh = await boundedPolicy(this.engine, {
           tenantId: p.tenantId,
           principal: p,
-          request: await this.trustedRequest(tx, p, request),
+          request: await this.trustedRequest(tx, p, original),
           policy,
         });
         if (fresh.effect === 'DENY')
           throw new DomainError(403, 'POLICY_REEVALUATION_DENIED');
+        if (
+          fresh.effect === 'REQUIRE_APPROVAL' &&
+          (fresh.approval?.requiredRole !== row.required_role ||
+            fresh.approval?.prohibitSelf !== row.prohibit_self)
+        )
+          throw new DomainError(403, 'APPROVAL_AUTHORITY_CHANGED');
+        if (
+          row.state === 'APPROVED' &&
+          !(
+            await tx.query(
+              'SELECT id FROM lock_principal($1,$2) WHERE kind=$3 AND $4=ANY(roles)',
+              [p.tenantId, row.resolved_by, 'human', row.required_role],
+            )
+          ).rowCount
+        )
+          throw new DomainError(403, 'APPROVER_AUTHORITY_REVOKED');
         const result = {
           ...response(row),
           effect:
@@ -378,13 +395,16 @@ export class Authorization {
       if (!row) throw new DomainError(404, 'APPROVAL_NOT_FOUND');
       requireRole(p, row.required_role);
       if (row.prohibit_self && row.principal_id === p.id)
-        throw new DomainError(403, 'SELF_APPROVAL_FORBIDDEN');
+        throw new DomainError(409, 'SELF_APPROVAL_FORBIDDEN');
       if (
         approvalBinding({ ...p, id: row.principal_id }, row) !==
         input.expectedBindingDigest
       )
         throw new DomainError(409, 'APPROVAL_BINDING_MISMATCH');
-      const replay = await this.replay(tx, p, `resolve:${id}`, key, input);
+      const replay = await this.replay(tx, p, 'resolve', key, {
+        approvalId: id,
+        ...input,
+      });
       if (replay) return replay;
       if (row.state !== 'PENDING' || row.expires_at.getTime() <= Date.now())
         throw new DomainError(409, 'APPROVAL_NOT_PENDING');
@@ -412,7 +432,14 @@ export class Authorization {
         state,
       });
       const output = await this.approvalView(tx, p, id);
-      await this.remember(tx, p, `resolve:${id}`, key, input, output);
+      await this.remember(
+        tx,
+        p,
+        'resolve',
+        key,
+        { approvalId: id, ...input },
+        output,
+      );
       return output;
     });
   }
@@ -433,7 +460,7 @@ export class Authorization {
           }),
         ]))
       )
-        throw new DomainError(422, 'POLICY_INVALID');
+        throw new DomainError(400, 'POLICY_INVALID');
     } catch (error) {
       if (error instanceof DomainError) throw error;
       throw new DomainError(503, 'POLICY_ENGINE_UNAVAILABLE');
@@ -483,9 +510,21 @@ export class Authorization {
           [p.tenantId],
         );
         if (active.rows.length > 64)
-          throw new DomainError(422, 'POLICY_SET_LIMIT');
-        const document = { policies: active.rows };
-        const snapshot = `set.${digest(document)}`;
+          throw new DomainError(400, 'POLICY_INVALID');
+        const revision = Number(
+          (
+            await tx.query(
+              'UPDATE tenants SET policy_revision=policy_revision+1 WHERE id=$1 RETURNING policy_revision',
+              [p.tenantId],
+            )
+          ).rows[0].policy_revision,
+        );
+        const document = {
+          tenantId: p.tenantId,
+          revision,
+          policies: active.rows,
+        };
+        const snapshot = `r${revision}.${digest({ kind: 'aegis.policy-set/v1', ...document }).slice(0, 12)}`;
         await tx.query(
           'INSERT INTO policies(tenant_id,version,document,digest,created_by) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING',
           [p.tenantId, snapshot, document, digest(document), p.id],

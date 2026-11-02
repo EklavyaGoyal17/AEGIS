@@ -1,4 +1,5 @@
 import pg from 'pg';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 import {
   canonical,
@@ -11,7 +12,17 @@ import {
 export type Tx = pg.PoolClient;
 export const SYSTEM_TENANT = '00000000-0000-0000-0000-000000000000';
 export class Store {
+  private readonly context = new AsyncLocalStorage<{
+    tenantId: string;
+    tx: Tx;
+  }>();
   constructor(readonly pool: pg.Pool) {}
+  contextQuery(tenantId: string, query: string, values: unknown[]) {
+    const active = this.context.getStore();
+    if (!active || active.tenantId !== tenantId)
+      throw new Error('Engine context requires the active tenant transaction');
+    return active.tx.query(query, values);
+  }
   async transaction<T>(
     tenantId: string,
     fn: (tx: Tx) => Promise<T>,
@@ -27,7 +38,7 @@ export class Store {
         [tenantId],
       );
       if (!tenant.rowCount) throw new DomainError(403, 'UNKNOWN_TENANT');
-      const result = await fn(tx);
+      const result = await this.context.run({ tenantId, tx }, () => fn(tx));
       await tx.query('COMMIT');
       return result;
     } catch (error) {
@@ -76,11 +87,19 @@ export class Store {
     agentId: string,
     action: string,
     resourceType: string,
+    resourceId: string,
   ) {
     await this.currentPrincipal(tx, principal);
     const grant = await tx.query(
-      'SELECT id FROM lock_delegation($1,$2,$3,$4,$5)',
-      [principal.tenantId, principal.id, agentId, action, resourceType],
+      'SELECT id FROM lock_delegation($1,$2,$3,$4,$5,$6)',
+      [
+        principal.tenantId,
+        principal.id,
+        agentId,
+        action,
+        resourceType,
+        resourceId,
+      ],
     );
     if (!grant.rowCount) throw new DomainError(403, 'DELEGATION_REQUIRED');
   }

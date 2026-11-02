@@ -182,7 +182,7 @@ export function buildApp(options?: AppOptions) {
     try {
       const result = await store.pool.query(
         'SELECT 1 FROM schema_migrations WHERE version=$1',
-        ['002'],
+        ['004'],
       );
       if (
         !result.rowCount ||
@@ -279,11 +279,15 @@ export function buildApp(options?: AppOptions) {
   });
   if (options.surface === 'gateway') {
     if (!options.gateway) throw new Error('Gateway dependency required');
-    app.post('/internal/v1/executions', async (request) => {
+    app.post('/internal/v1/executions', async (request, reply) => {
       const input = executionSchema.parse(request.body);
       const controller = new AbortController();
       const abort = () => controller.abort();
       request.raw.once('aborted', abort);
+      const disconnect = () => {
+        if (!reply.raw.writableFinished) abort();
+      };
+      reply.raw.once('close', disconnect);
       const timeout = setTimeout(abort, 10000);
       const span = spans.get(request);
       try {
@@ -300,6 +304,7 @@ export function buildApp(options?: AppOptions) {
       } finally {
         clearTimeout(timeout);
         request.raw.removeListener('aborted', abort);
+        reply.raw.removeListener('close', disconnect);
       }
     });
     return app;
@@ -362,7 +367,7 @@ export function buildApp(options?: AppOptions) {
     if (!/^-?\d{1,16}$/.test(after))
       throw new DomainError(400, 'INVALID_CURSOR');
     const result = await store.pool.query(
-      `SELECT seq,event FROM api_audit_events WHERE tenant_id=$1 AND seq>$2 AND ($3::text IS NULL OR event->>'occurredAt'>=$3) AND ($4::text IS NULL OR event->>'occurredAt'<=$4) AND ($5::text IS NULL OR event->>'type'=$5) AND ($6::text IS NULL OR event->>'agentId'=$6) AND ($7::text IS NULL OR event->>'decisionId'=$7) ORDER BY seq LIMIT $8`,
+      `SELECT seq,event FROM api_audit_events WHERE tenant_id=$1 AND seq>$2 AND ($3::text IS NULL OR (event->>'occurredAt')::timestamptz>=$3::timestamptz) AND ($4::text IS NULL OR (event->>'occurredAt')::timestamptz<=$4::timestamptz) AND ($5::text IS NULL OR event->>'type'=$5) AND ($6::text IS NULL OR event->>'agentId'=$6) AND ($7::text IS NULL OR event->>'decisionId'=$7) ORDER BY seq LIMIT $8`,
       [
         p.tenantId,
         after,

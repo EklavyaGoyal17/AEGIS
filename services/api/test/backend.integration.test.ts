@@ -192,10 +192,10 @@ beforeEach(async () => {
       'INSERT INTO principals(tenant_id,id,issuer,subject,kind,roles,connector) VALUES($1,$2,$3,$4,$5,$6,$7)',
       [p.tenantId, p.id, p.issuer, p.subject, p.kind, p.roles, p.connector],
     );
-  await pool.query('INSERT INTO agents(tenant_id,id) VALUES($1,$2)', [
-    tenant,
-    'demo-agent',
-  ]);
+  await pool.query(
+    'INSERT INTO agents(tenant_id,id,owner_principal_id) VALUES($1,$2,$3)',
+    [tenant, 'demo-agent', machine.id],
+  );
   for (const p of [machine, human])
     await pool.query(
       `INSERT INTO delegations(tenant_id,id,principal_id,agent_id,actions,resource_types,expires_at) VALUES($1,$2,$3,$4,$5,$6,now()+interval '1 hour')`,
@@ -388,7 +388,7 @@ describe('decision and approval authorization', () => {
   });
   test('requires human authority and prevents self approval', async () => {
     const approvalId = (await evaluate(request(), human)).json().approvalId;
-    expect((await approve(approvalId, human)).statusCode).toBe(403);
+    expect((await approve(approvalId, human)).statusCode).toBe(409);
     expect((await approve(approvalId, machine)).statusCode).toBe(403);
   });
   test('concurrent resolutions permit only one legal transition', async () => {
@@ -905,3 +905,362 @@ test('gateway recomputes digest from actual arguments', async () => {
   ).toBe(403);
   expect(await count('demo_notes')).toBe(0);
 });
+
+test.skipIf(!process.env.AEGIS_CANONICAL_ENGINE_MODULE)(
+  'published canonical engine enforces ALLOW, DENY precedence and approval at the real gateway',
+  async () => {
+    const { canonicalPolicyEngine } =
+      await import('../src/canonical-engine.js');
+    const real = await canonicalPolicyEngine(
+      store,
+      process.env.AEGIS_CANONICAL_ENGINE_MODULE!,
+    );
+    authorization = new Authorization(store, real);
+    gateway = new Gateway(authorization, gateway.adapter);
+    await app.close();
+    await gatewayApp.close();
+    app = buildApp({ authorization, identity });
+    gatewayApp = buildApp({
+      authorization,
+      identity,
+      gateway,
+      surface: 'gateway',
+    });
+    function document(effect: string, extra: unknown[] = []) {
+      return {
+        schemaVersion: 'aegis.policy/v1',
+        decisionTtlSeconds: 60,
+        rules: [
+          {
+            id: 'demo-rule',
+            effect,
+            actions: ['demo.note.create'],
+            resourceTypes: ['note'],
+            ...(effect === 'REQUIRE_APPROVAL'
+              ? { approval: { ttlSeconds: 60 } }
+              : {}),
+          },
+          ...extra,
+        ],
+      };
+    }
+    async function activate(
+      doc: unknown,
+      expectedLatestVersion: number | null,
+    ) {
+      return authorization.writePolicy(
+        human,
+        {
+          policyId: 'canonical',
+          name: 'Canonical integration',
+          document: doc as never,
+          activate: true,
+          expectedLatestVersion,
+        },
+        randomUUID(),
+      );
+    }
+    await activate(document('ALLOW'), null);
+    const first = request();
+    const allowed = (await evaluate(first)).json();
+    expect(allowed.effect).toBe('ALLOW');
+    const snapshot = (
+      await pool.query(
+        'SELECT version,document FROM policies WHERE tenant_id=$1 AND version=$2',
+        [tenant, allowed.policyVersion],
+      )
+    ).rows[0];
+    const module = await import(process.env.AEGIS_CANONICAL_ENGINE_MODULE!);
+    expect(module.compilePolicySet(snapshot.document).policyVersion).toBe(
+      allowed.policyVersion,
+    );
+    expect((await execute(allowed.decisionId, first)).json().state).toBe(
+      'SUCCEEDED',
+    );
+    await activate(document('REQUIRE_APPROVAL'), 1);
+    const second = request();
+    const pending = (await evaluate(second)).json();
+    expect(pending.effect).toBe('REQUIRE_APPROVAL');
+    expect((await execute(pending.decisionId, second)).statusCode).toBe(403);
+    expect((await approve(pending.approvalId)).statusCode).toBe(200);
+    const resumed = await evaluate({
+      ...second,
+      requestId: randomUUID(),
+      approvalId: pending.approvalId,
+    });
+    expect(resumed.json().effect).toBe('ALLOW');
+    expect((await execute(pending.decisionId, second)).json().state).toBe(
+      'SUCCEEDED',
+    );
+    await activate(
+      document('ALLOW', [
+        {
+          id: 'explicit-deny',
+          effect: 'DENY',
+          actions: ['demo.note.create'],
+          resourceTypes: ['note'],
+        },
+      ]),
+      2,
+    );
+    const third = request();
+    const denied = (await evaluate(third)).json();
+    expect(denied.effect).toBe('DENY');
+    expect(denied.reasonCodes).toContain('EXPLICIT_DENY');
+    expect((await execute(denied.decisionId, third)).statusCode).toBe(403);
+    expect(await count('demo_notes')).toBe(2);
+  },
+);
+
+test.skipIf(!process.env.AEGIS_CANONICAL_ENGINE_MODULE)(
+  'canonical engine uses server sensitivity and scoped delegation limits',
+  async () => {
+    const { canonicalPolicyEngine } =
+      await import('../src/canonical-engine.js');
+    authorization = new Authorization(
+      store,
+      await canonicalPolicyEngine(
+        store,
+        process.env.AEGIS_CANONICAL_ENGINE_MODULE!,
+      ),
+    );
+    await app.close();
+    app = buildApp({ authorization, identity });
+    await authorization.writePolicy(
+      human,
+      {
+        policyId: 'canonical',
+        name: 'Scoped integration',
+        document: {
+          schemaVersion: 'aegis.policy/v1',
+          rules: [
+            {
+              id: 'allow-demo',
+              effect: 'ALLOW',
+              actions: ['demo.note.create'],
+              resourceTypes: ['note'],
+            },
+          ],
+        },
+        activate: true,
+        expectedLatestVersion: null,
+      },
+      randomUUID(),
+    );
+    const body = request();
+    body.resource.attributes.sensitivity = 'public';
+    await pool.query(
+      'INSERT INTO resource_metadata(tenant_id,type,id,attributes) VALUES($1,$2,$3,$4)',
+      [tenant, 'note', body.resource.id, { sensitivity: 'restricted' }],
+    );
+    await pool.query(
+      "UPDATE delegations SET max_sensitivity='public' WHERE tenant_id=$1",
+      [tenant],
+    );
+    const result = await evaluate(body);
+    expect(result.json().effect).toBe('DENY');
+    expect(result.json().reasonCodes).toContain(
+      'DELEGATION_SENSITIVITY_EXCEEDED',
+    );
+    await pool.query(
+      'UPDATE delegations SET resource_ids=$2 WHERE tenant_id=$1',
+      [tenant, [randomUUID()]],
+    );
+    expect((await evaluate()).statusCode).toBe(403);
+  },
+);
+
+test.skipIf(!process.env.AEGIS_CANONICAL_ENGINE_MODULE)(
+  'canonical context reads reuse the transaction under a small connection pool',
+  async () => {
+    const { canonicalPolicyEngine } =
+      await import('../src/canonical-engine.js');
+    const smallPool = new pg.Pool({
+      connectionString: container.getConnectionUri(),
+      max: 2,
+      connectionTimeoutMillis: 2000,
+    });
+    try {
+      const smallStore = new Store(smallPool);
+      const auth = new Authorization(
+        smallStore,
+        await canonicalPolicyEngine(
+          smallStore,
+          process.env.AEGIS_CANONICAL_ENGINE_MODULE!,
+        ),
+      );
+      await auth.writePolicy(
+        human,
+        {
+          policyId: 'pool-test',
+          name: 'Pool test',
+          document: {
+            schemaVersion: 'aegis.policy/v1',
+            rules: [
+              {
+                id: 'allow-note',
+                effect: 'ALLOW',
+                actions: ['demo.note.create'],
+                resourceTypes: ['note'],
+              },
+            ],
+          },
+          activate: true,
+          expectedLatestVersion: null,
+        },
+        randomUUID(),
+      );
+      const results = await Promise.all(
+        Array.from({ length: 6 }, () =>
+          auth.evaluate(machine, request(), randomUUID()),
+        ),
+      );
+      expect(results.every((result) => result.effect === 'ALLOW')).toBe(true);
+    } finally {
+      await smallPool.end();
+    }
+  },
+);
+
+test('approved evaluation resumption is binding-checked and remains non-consuming', async () => {
+  const body = request();
+  const decision = (await evaluate(body)).json();
+  await approve(decision.approvalId);
+  const resumed = await evaluate({
+    ...body,
+    requestId: randomUUID(),
+    approvalId: decision.approvalId,
+  });
+  expect(resumed.statusCode).toBe(200);
+  expect(resumed.json()).toMatchObject({
+    effect: 'ALLOW',
+    decisionId: decision.decisionId,
+    approvalId: decision.approvalId,
+  });
+  expect(
+    (
+      await pool.query(
+        'SELECT state FROM approvals WHERE tenant_id=$1 AND id=$2',
+        [tenant, decision.approvalId],
+      )
+    ).rows[0].state,
+  ).toBe('APPROVED');
+  expect(
+    (
+      await evaluate({
+        ...body,
+        requestId: randomUUID(),
+        approvalId: decision.approvalId,
+        context: { changed: true },
+      })
+    ).statusCode,
+  ).toBe(409);
+});
+
+test('resolution idempotency key cannot resolve a different approval', async () => {
+  const first = (await evaluate()).json().approvalId;
+  const second = (await evaluate()).json().approvalId;
+  const key = randomUUID();
+  expect((await approve(first, human, 'APPROVE', key)).statusCode).toBe(200);
+  const conflict = await approve(second, human, 'APPROVE', key);
+  expect(conflict.statusCode).toBe(409);
+  expect(conflict.json().error.code).toBe('IDEMPOTENCY_CONFLICT');
+});
+
+test.skipIf(!process.env.AEGIS_CANONICAL_ENGINE_MODULE)(
+  'argument, approval and public audit hashes interoperate with canonical crypto primitives',
+  async () => {
+    const crypto = await import(
+      new URL(
+        '../../contracts/dist/crypto/index.js',
+        process.env.AEGIS_CANONICAL_ENGINE_MODULE!,
+      ).href
+    );
+    const args = { text: 'isolated security test' };
+    expect(argumentsDigest(args)).toBe(crypto.computeArgumentsDigest(args));
+    const body = request();
+    const decision = (await evaluate(body)).json();
+    const page = (
+      await app.inject({ url: '/v1/approvals', headers: await headers(human) })
+    ).json();
+    expect(page.items[0].bindingDigest).toBe(
+      crypto.computeApprovalBindingDigest({
+        tenantId: tenant,
+        agentId: body.agentId,
+        principalId: machine.id,
+        action: body.action,
+        resource: body.resource,
+        argumentsDigest: body.argumentsDigest,
+      }),
+    );
+    await approve(decision.approvalId);
+    await execute(decision.decisionId, body);
+    const events = (
+      await app.inject({
+        url: '/v1/audit/events',
+        headers: await headers(human),
+      })
+    ).json().items;
+    expect(crypto.verifyAuditChain(events)).toEqual({ ok: true });
+  },
+);
+
+test('cancellation before claiming execution leaves no side effect or durable authorization claim', async () => {
+  mode = 'ALLOW';
+  const body = request();
+  const decision = (await evaluate(body)).json();
+  const controller = new AbortController();
+  controller.abort();
+  await expect(
+    gateway.execute(
+      machine,
+      {
+        decisionId: decision.decisionId,
+        request: body,
+        arguments: { text: 'isolated security test' },
+      },
+      randomUUID(),
+      controller.signal,
+    ),
+  ).rejects.toThrow('REQUEST_CANCELLED');
+  expect(await count('executions')).toBe(0);
+  expect(await count('demo_notes')).toBe(0);
+});
+
+test.skipIf(!process.env.AEGIS_CANONICAL_ENGINE_MODULE)(
+  'invalid canonical policy writes return 400 without persisting a revision',
+  async () => {
+    const { canonicalPolicyEngine } =
+      await import('../src/canonical-engine.js');
+    authorization = new Authorization(
+      store,
+      await canonicalPolicyEngine(
+        store,
+        process.env.AEGIS_CANONICAL_ENGINE_MODULE!,
+      ),
+    );
+    await app.close();
+    app = buildApp({ authorization, identity });
+    const result = await app.inject({
+      method: 'POST',
+      url: '/v1/policies',
+      headers: await headers(human),
+      payload: {
+        policyId: 'bad-policy',
+        name: 'Invalid',
+        document: { schemaVersion: 'unknown', rules: [] },
+        activate: true,
+        expectedLatestVersion: null,
+      },
+    });
+    expect(result.statusCode).toBe(400);
+    expect(result.json().error.code).toBe('POLICY_INVALID');
+    expect(
+      (
+        await pool.query('SELECT * FROM policy_catalog WHERE tenant_id=$1', [
+          tenant,
+        ])
+      ).rowCount,
+    ).toBe(0);
+  },
+);

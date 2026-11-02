@@ -18,6 +18,7 @@ import { Store, verifyAudit } from '../src/store.js';
 import { Authorization } from '../src/authorization.js';
 import { buildApp } from '../src/app.js';
 import {
+  argumentsDigest,
   type Evaluation,
   type PolicyEngine,
   type PolicyResult,
@@ -49,7 +50,8 @@ const request = (): Evaluation => ({
   agentId: 'demo-agent',
   action: 'demo.note.create',
   resource: { type: 'note', id: randomUUID(), attributes: {} },
-  context: { arguments: { text: 'isolated security test' } },
+  context: {},
+  argumentsDigest: argumentsDigest({ text: 'isolated security test' }),
 });
 async function token(
   principal = machine,
@@ -86,16 +88,27 @@ async function approve(
   return app.inject({
     method: 'POST',
     url: `/v1/approvals/${approvalId}/resolve`,
-    headers: await headers(principal),
-    payload: { requestId, action },
+    headers: { ...(await headers(principal)), 'idempotency-key': requestId },
+    payload: {
+      decision: action,
+      expectedBindingDigest: (
+        await store.transaction(tenant, (tx) =>
+          authorization.approvalView(tx, machine, approvalId),
+        )
+      ).bindingDigest,
+    },
   });
 }
-async function execute(decisionId: string, body: Evaluation) {
+async function execute(
+  decisionId: string,
+  body: Evaluation,
+  args: Record<string, unknown> = { text: 'isolated security test' },
+) {
   return gatewayApp.inject({
     method: 'POST',
     url: '/internal/v1/executions',
     headers: await headers(),
-    payload: { decisionId, request: body },
+    payload: { decisionId, request: body, arguments: args },
   });
 }
 async function count(
@@ -350,7 +363,7 @@ describe('decision and approval authorization', () => {
     ).toBe(1);
     expect(await count('decisions')).toBe(1);
     expect(await count('approvals')).toBe(1);
-    body.context.arguments = { text: 'changed' };
+    body.context.note = 'changed';
     expect((await evaluate(body)).statusCode).toBe(409);
   });
   test('cross-tenant approval resolution and reads disclose no records', async () => {
@@ -369,8 +382,7 @@ describe('decision and approval authorization', () => {
       auditResult
         .json()
         .items.every(
-          (item: { event: { tenantId: string } }) =>
-            item.event.tenantId === other.tenantId,
+          (item: { tenantId: string }) => item.tenantId === other.tenantId,
         ),
     ).toBe(true);
   });
@@ -415,9 +427,25 @@ describe('decision and approval authorization', () => {
       method: 'POST',
       url: '/v1/policies',
       headers: await headers(human),
-      payload: { version: 'test-v2', document: { fixture: true } },
+      payload: {
+        policyId: 'test-policy',
+        name: 'Test policy',
+        document: {
+          schemaVersion: 'aegis.policy/v1',
+          rules: [
+            {
+              id: 'test-rule',
+              effect: 'ALLOW',
+              actions: ['demo.note.create'],
+              resourceTypes: ['note'],
+            },
+          ],
+        },
+        activate: true,
+        expectedLatestVersion: null,
+      },
     });
-    expect(create.statusCode).toBe(200);
+    expect(create.statusCode).toBe(201);
     expect(
       (
         await pool.query(
@@ -432,7 +460,13 @@ describe('decision and approval authorization', () => {
           method: 'POST',
           url: '/v1/policies',
           headers: await headers(human),
-          payload: { version: 'test-v2', document: { fixture: false } },
+          payload: {
+            policyId: 'test-policy',
+            name: 'Test policy',
+            document: { fixture: false },
+            activate: true,
+            expectedLatestVersion: null,
+          },
         })
       ).statusCode,
     ).toBe(409);
@@ -471,7 +505,7 @@ describe('trusted execution boundary and injected failures', () => {
     const body = request();
     const decision = (await evaluate(body)).json();
     const changed = structuredClone(body);
-    changed.context.arguments = { text: 'forged payload' };
+    changed.argumentsDigest = argumentsDigest({ text: 'forged payload' });
     expect((await execute(decision.decisionId, changed)).statusCode).toBe(403);
     changed.context = body.context;
     changed.resource.id = randomUUID();
@@ -584,7 +618,11 @@ describe('trusted execution boundary and injected failures', () => {
     });
     const result = await failing.execute(
       machine,
-      { decisionId: decision.decisionId, request: body },
+      {
+        decisionId: decision.decisionId,
+        request: body,
+        arguments: { text: 'isolated security test' },
+      },
       randomUUID(),
       new AbortController().signal,
     );
@@ -618,4 +656,171 @@ describe('trusted execution boundary and injected failures', () => {
     }
     expect(await verifyAudit(store, tenant)).toBe(false);
   });
+});
+
+test.skipIf(!process.env.AEGIS_CONTRACT_SCHEMA)(
+  'public responses conform to Claude canonical JSON Schema',
+  async () => {
+    const { readFile } = await import('node:fs/promises');
+    const { Ajv2020 } = await import('ajv/dist/2020.js');
+    const formats = await import('ajv-formats');
+    const bundle = JSON.parse(
+      await readFile(process.env.AEGIS_CONTRACT_SCHEMA!, 'utf8'),
+    );
+    const ajv = new Ajv2020({ strict: false, allErrors: true });
+    (
+      formats.default as unknown as (
+        instance: InstanceType<typeof Ajv2020>,
+      ) => void
+    )(ajv);
+    ajv.addSchema(bundle);
+    function check(name: string, value: unknown) {
+      const validate = ajv.getSchema(`${bundle.$id}#/$defs/${name}`);
+      expect(validate, `schema ${name}`).toBeDefined();
+      expect(validate!(value), JSON.stringify(validate!.errors)).toBe(true);
+    }
+    const body = request();
+    check('EvaluateDecisionRequest', body);
+    const evaluated = await evaluate(body);
+    check('EvaluateDecisionResponse', evaluated.json());
+    check(
+      'ApprovalPage',
+      (
+        await app.inject({
+          url: '/v1/approvals',
+          headers: await headers(human),
+        })
+      ).json(),
+    );
+    check(
+      'ApprovalRequest',
+      (await approve(evaluated.json().approvalId)).json(),
+    );
+    check('HealthResponse', (await app.inject('/v1/health')).json());
+    check(
+      'ErrorEnvelope',
+      (
+        await app.inject({
+          method: 'POST',
+          url: '/v1/decisions/evaluate',
+          payload: body,
+        })
+      ).json(),
+    );
+    const document = {
+      schemaVersion: 'aegis.policy/v1',
+      rules: [
+        {
+          id: 'require-demo',
+          effect: 'REQUIRE_APPROVAL',
+          actions: ['demo.note.create'],
+          resourceTypes: ['note'],
+          approval: { ttlSeconds: 60 },
+        },
+      ],
+    };
+    const created = await app.inject({
+      method: 'POST',
+      url: '/v1/policies',
+      headers: await headers(human),
+      payload: {
+        policyId: 'demo-policy',
+        name: 'Demo policy',
+        document,
+        activate: true,
+        expectedLatestVersion: null,
+      },
+    });
+    expect(created.statusCode).toBe(201);
+    check('PolicyVersion', created.json());
+    check(
+      'PolicyPage',
+      (
+        await app.inject({ url: '/v1/policies', headers: await headers(human) })
+      ).json(),
+    );
+    check(
+      'AuditEventPage',
+      (
+        await app.inject({
+          url: '/v1/audit/events',
+          headers: await headers(human),
+        })
+      ).json(),
+    );
+    expect(await verifyAudit(store, tenant)).toBe(true);
+  },
+);
+
+test('signed cursors reject cross-tenant reuse, tampering and changed filters', async () => {
+  await evaluate();
+  await evaluate();
+  const first = await app.inject({
+    url: '/v1/approvals?limit=1',
+    headers: await headers(human),
+  });
+  const cursor = first.json().nextCursor;
+  expect(cursor).toBeTypeOf('string');
+  expect(
+    (
+      await app.inject({
+        url: `/v1/approvals?cursor=${encodeURIComponent(cursor)}&limit=1`,
+        headers: await headers(human),
+      })
+    ).json().items.length,
+  ).toBe(1);
+  for (const [value, principal, suffix] of [
+    [cursor, other, ''],
+    [`${cursor}x`, human, ''],
+    [cursor, human, '&status=PENDING'],
+  ] as const)
+    expect(
+      (
+        await app.inject({
+          url: `/v1/approvals?cursor=${encodeURIComponent(value)}${suffix}`,
+          headers: await headers(principal),
+        })
+      ).statusCode,
+    ).toBe(400);
+});
+
+test('human resolution rejects a different reviewed binding digest', async () => {
+  const id = (await evaluate()).json().approvalId;
+  const result = await app.inject({
+    method: 'POST',
+    url: `/v1/approvals/${id}/resolve`,
+    headers: await headers(human),
+    payload: {
+      decision: 'APPROVE',
+      expectedBindingDigest: `sha256:${'0'.repeat(64)}`,
+    },
+  });
+  expect(result.statusCode).toBe(409);
+  expect(result.json().error.code).toBe('APPROVAL_BINDING_MISMATCH');
+});
+
+test('server metadata overrides caller resource claims before policy evaluation', async () => {
+  const body = request();
+  body.resource.attributes = { sensitivity: 'public', recordCount: 1 };
+  await pool.query(
+    'INSERT INTO resource_metadata(tenant_id,type,id,attributes) VALUES($1,$2,$3,$4)',
+    [
+      tenant,
+      body.resource.type,
+      body.resource.id,
+      { sensitivity: 'restricted', recordCount: 20000 },
+    ],
+  );
+  let observed: unknown;
+  engine.evaluate = async (input) => {
+    observed = input.request.resource.attributes;
+    return {
+      effect: 'DENY',
+      reasonCodes: ['EXPLICIT_DENY'],
+      trace: [],
+      ttlSeconds: 30,
+    };
+  };
+  expect((await evaluate(body)).json().effect).toBe('DENY');
+  expect(observed).toEqual({ sensitivity: 'restricted', recordCount: 20000 });
 });

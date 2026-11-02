@@ -1,19 +1,47 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 
+export const identifier = z
+  .string()
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/);
+export const sha256Schema = z.string().regex(/^sha256:[0-9a-f]{64}$/);
+const scalar = z.union([
+  z.string().max(1024),
+  z.number().finite(),
+  z.boolean(),
+  z.null(),
+]);
+export const attributesSchema = z
+  .record(
+    z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,63}$/),
+    z.union([scalar, z.array(scalar).max(256)]),
+  )
+  .refine((value) => Object.keys(value).length <= 64);
 export const evaluationSchema = z
   .object({
     requestId: z.uuid(),
-    agentId: z.string().min(1).max(128),
-    action: z.string().regex(/^[a-z][a-z0-9_.-]{1,127}$/),
+    agentId: identifier,
+    action: z
+      .string()
+      .max(128)
+      .regex(/^[a-z][a-z0-9_-]{0,62}(\.[a-z][a-z0-9_-]{0,62}){1,4}$/),
     resource: z
       .object({
-        type: z.string().min(1).max(128),
-        id: z.string().min(1).max(256),
-        attributes: z.record(z.string(), z.json()).default({}),
+        type: z
+          .string()
+          .max(128)
+          .regex(/^[a-z][a-z0-9_-]{0,62}(\.[a-z][a-z0-9_-]{0,62}){0,3}$/),
+        id: z
+          .string()
+          .min(1)
+          .max(256)
+          .regex(/^[^\u0000-\u001f\u007f]+$/),
+        attributes: attributesSchema,
       })
       .strict(),
-    context: z.record(z.string(), z.json()).default({}),
+    context: attributesSchema,
+    argumentsDigest: sha256Schema.optional(),
+    approvalId: z.uuid().optional(),
   })
   .strict();
 export type Evaluation = z.infer<typeof evaluationSchema>;
@@ -43,20 +71,73 @@ export class DomainError extends Error {
     super(code);
   }
 }
-export function canonical(value: unknown): string {
+export function canonical(
+  value: unknown,
+  depth = 0,
+  seen = new Set<object>(),
+): string {
+  if (depth > 32) throw new DomainError(400, 'CANONICAL_DEPTH_EXCEEDED');
   if (value === null || typeof value === 'boolean' || typeof value === 'string')
     return JSON.stringify(value);
   if (typeof value === 'number' && Number.isFinite(value))
     return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
   if (typeof value === 'object' && value !== null) {
-    const object = value as Record<string, unknown>;
-    return `{${Object.keys(object)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${canonical(object[key])}`)
-      .join(',')}}`;
+    if (seen.has(value)) throw new DomainError(400, 'CANONICAL_CYCLE');
+    seen.add(value);
+    try {
+      if (Array.isArray(value)) {
+        const items: string[] = [];
+        for (let i = 0; i < value.length; i++) {
+          if (!(i in value)) throw new DomainError(400, 'SPARSE_ARRAY');
+          items.push(canonical(value[i], depth + 1, seen));
+        }
+        return `[${items.join(',')}]`;
+      }
+      if (
+        ![Object.prototype, null].includes(Object.getPrototypeOf(value)) ||
+        Object.getOwnPropertySymbols(value).length
+      )
+        throw new DomainError(400, 'NON_PLAIN_OBJECT');
+      const object = value as Record<string, unknown>;
+      return `{${Object.keys(object)
+        .sort()
+        .map(
+          (key) =>
+            `${JSON.stringify(key)}:${canonical(object[key], depth + 1, seen)}`,
+        )
+        .join(',')}}`;
+    } finally {
+      seen.delete(value);
+    }
   }
   throw new DomainError(400, 'INVALID_CANONICAL_VALUE');
+}
+export function publicDigest(value: unknown) {
+  return `sha256:${digest(value)}`;
+}
+export function argumentsDigest(args: unknown) {
+  return publicDigest({ kind: 'aegis.arguments/v1', args });
+}
+export function approvalBinding(
+  principal: Principal,
+  row: {
+    agent_id: string;
+    action: string;
+    resource_type: string;
+    resource_id: string;
+    arguments_digest: string;
+  },
+) {
+  return publicDigest({
+    kind: 'aegis.approval-binding/v1',
+    tenantId: principal.tenantId,
+    agentId: row.agent_id,
+    principalId: principal.id,
+    action: row.action,
+    resource: { type: row.resource_type, id: row.resource_id },
+    argumentsDigest:
+      row.arguments_digest === 'none' ? null : row.arguments_digest,
+  });
 }
 export function digest(value: unknown) {
   return createHash('sha256').update(canonical(value)).digest('hex');
@@ -70,7 +151,7 @@ export const policyResultSchema = z
     effect: z.enum(['ALLOW', 'DENY', 'REQUIRE_APPROVAL']),
     reasonCodes: z.array(z.string().regex(/^[A-Z0-9_]{1,64}$/)).max(32),
     // Trace contains rule identifiers only; policy engines must not return raw request data.
-    trace: z.array(z.string().regex(/^[A-Za-z0-9_.:-]{1,128}$/)).max(128),
+    trace: z.array(z.string().regex(/^[A-Za-z0-9_./:-]{1,200}$/)).max(256),
     ttlSeconds: z.number().int().min(1).max(300),
     approval: z
       .object({

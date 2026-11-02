@@ -6,6 +6,7 @@ import {
 } from '../../api/src/authorization.js';
 import {
   boundedPolicy,
+  argumentsDigest,
   digest,
   DomainError,
   evaluationSchema,
@@ -15,7 +16,11 @@ import {
 import { audit } from '../../api/src/store.js';
 
 export const executionSchema = z
-  .object({ decisionId: z.uuid(), request: evaluationSchema })
+  .object({
+    decisionId: z.uuid(),
+    request: evaluationSchema,
+    arguments: z.record(z.string(), z.json()),
+  })
   .strict();
 export const noteArguments = z
   .object({ text: z.string().min(1).max(4096) })
@@ -26,6 +31,7 @@ export interface ToolAdapter {
     executionId: string;
     tenantId: string;
     request: Evaluation;
+    arguments: unknown;
     signal: AbortSignal;
   }): Promise<void>;
 }
@@ -62,7 +68,7 @@ export class DemoNoteAdapter implements ToolAdapter {
       input.request.resource.type !== 'note'
     )
       throw new DomainError(403, 'ADAPTER_ACTION_MISMATCH');
-    const args = noteArguments.parse(input.request.context.arguments);
+    const args = noteArguments.parse(input.arguments);
     const result = await fetch(this.endpoint, {
       method: 'POST',
       redirect: 'error',
@@ -118,8 +124,7 @@ export class Gateway {
       if (!decision) throw new DomainError(404, 'DECISION_NOT_FOUND');
       if (
         decision.request_digest !== digest(input.request) ||
-        decision.arguments_digest !==
-          digest(input.request.context.arguments ?? null)
+        decision.arguments_digest !== argumentsDigest(input.arguments)
       )
         throw new DomainError(403, 'AUTHORIZATION_BINDING_MISMATCH');
       const existing = (
@@ -151,14 +156,18 @@ export class Gateway {
         input.request.resource.type !== 'note'
       )
         throw new DomainError(403, 'ADAPTER_ACTION_MISMATCH');
-      noteArguments.parse(input.request.context.arguments);
+      noteArguments.parse(input.arguments);
       const policy = await this.authorization.policy(tx, principal.tenantId);
       if (!policy || policy.version !== decision.policy_version)
         throw new DomainError(403, 'POLICY_VERSION_CHANGED');
       const result = await boundedPolicy(engine, {
         tenantId: principal.tenantId,
         principal,
-        request: input.request,
+        request: await this.authorization.trustedRequest(
+          tx,
+          principal,
+          input.request,
+        ),
         policy,
       });
       // Re-evaluation may tighten requirements; it cannot widen the stored authorization.
@@ -240,6 +249,7 @@ export class Gateway {
           executionId: claim.id,
           tenantId: principal.tenantId,
           request: input.request,
+          arguments: input.arguments,
           signal,
         });
         state = 'SUCCEEDED';

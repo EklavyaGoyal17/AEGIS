@@ -1,10 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import {
+  approvalBinding,
   boundedPolicy,
   digest,
   DomainError,
+  identifier,
+  publicDigest,
   requireRole,
+  sha256Schema,
   type DecisionResponse,
   type Evaluation,
   type PolicyEngine,
@@ -14,14 +18,19 @@ import { audit, Store, type Tx } from './store.js';
 
 export const resolutionSchema = z
   .object({
-    requestId: z.uuid(),
-    action: z.enum(['APPROVE', 'REJECT', 'CANCEL']),
+    decision: z.enum(['APPROVE', 'REJECT']),
+    expectedBindingDigest: sha256Schema,
+    comment: z.string().max(2000).optional(),
   })
   .strict();
 export const policyWriteSchema = z
   .object({
-    version: z.string().regex(/^[a-zA-Z0-9_.-]{1,128}$/),
+    policyId: identifier,
+    name: z.string().min(1).max(200),
+    description: z.string().max(500).optional(),
     document: z.json(),
+    activate: z.boolean(),
+    expectedLatestVersion: z.number().int().min(1).nullable(),
   })
   .strict();
 export interface DecisionRow {
@@ -37,8 +46,10 @@ export interface DecisionRow {
   policy_version: string;
   effect: DecisionResponse['effect'];
   reasons: string[];
+  trace: string[];
   approval_id: string | null;
   expires_at: Date;
+  created_at: Date;
 }
 export function response(row: DecisionRow): DecisionResponse {
   return {
@@ -55,42 +66,147 @@ export class Authorization {
     readonly store: Store,
     readonly engine: PolicyEngine,
   ) {}
+  async replay(
+    tx: Tx,
+    p: Principal,
+    scope: string,
+    key: string | undefined,
+    input: unknown,
+  ) {
+    if (!key) return undefined;
+    const row = (
+      await tx.query(
+        'SELECT * FROM idempotency_records WHERE tenant_id=$1 AND principal_id=$2 AND scope=$3 AND request_id=$4',
+        [p.tenantId, p.id, scope, key],
+      )
+    ).rows[0];
+    if (row && row.digest !== digest(input))
+      throw new DomainError(409, 'IDEMPOTENCY_CONFLICT');
+    return row?.response as Record<string, unknown> | undefined;
+  }
+  async remember(
+    tx: Tx,
+    p: Principal,
+    scope: string,
+    key: string | undefined,
+    input: unknown,
+    result: unknown,
+  ) {
+    if (key)
+      await tx.query(
+        'INSERT INTO idempotency_records(tenant_id,principal_id,scope,request_id,digest,response) VALUES($1,$2,$3,$4,$5,$6)',
+        [p.tenantId, p.id, scope, key, digest(input), result],
+      );
+  }
+  async trustedRequest(
+    tx: Tx,
+    p: Principal,
+    request: Evaluation,
+  ): Promise<Evaluation> {
+    const metadata = (
+      await tx.query(
+        'SELECT attributes FROM resource_metadata WHERE tenant_id=$1 AND type=$2 AND id=$3',
+        [p.tenantId, request.resource.type, request.resource.id],
+      )
+    ).rows[0];
+    // Caller metadata never supplies server-owned resource attributes to the engine.
+    return {
+      ...request,
+      resource: { ...request.resource, attributes: metadata?.attributes ?? {} },
+    };
+  }
   async evaluate(
-    principal: Principal,
+    p: Principal,
     request: Evaluation,
     correlationId: string,
   ): Promise<DecisionResponse> {
-    return this.store.transaction(principal.tenantId, async (tx) => {
+    return this.store.transaction(p.tenantId, async (tx) => {
       await this.store.authorizeAgent(
         tx,
-        principal,
+        p,
         request.agentId,
         request.action,
         request.resource.type,
       );
-      const existing = await tx.query<DecisionRow>(
-        'SELECT * FROM decisions WHERE tenant_id=$1 AND principal_id=$2 AND request_id=$3',
-        [principal.tenantId, principal.id, request.requestId],
+      const replay = await this.replay(
+        tx,
+        p,
+        'evaluate',
+        request.requestId,
+        request,
       );
-      if (existing.rows[0]) {
-        if (existing.rows[0].request_digest !== digest(request))
+      if (replay) return replay as unknown as DecisionResponse;
+      const old = (
+        await tx.query<DecisionRow>(
+          'SELECT * FROM decisions WHERE tenant_id=$1 AND principal_id=$2 AND request_id=$3',
+          [p.tenantId, p.id, request.requestId],
+        )
+      ).rows[0];
+      if (old) {
+        if (old.request_digest !== digest(request))
           throw new DomainError(409, 'IDEMPOTENCY_CONFLICT');
-        await audit(
-          tx,
-          principal.tenantId,
-          'DECISION_REPLAY',
-          principal.id,
-          correlationId,
-          { decisionId: existing.rows[0].id },
-        );
-        return response(existing.rows[0]);
+        return response(old);
       }
-      const policy = await this.policy(tx, principal.tenantId);
+      const policy = await this.policy(tx, p.tenantId);
+      if (request.approvalId) {
+        const row = (
+          await tx.query(
+            `SELECT d.*,a.state FROM approvals a JOIN decisions d ON d.tenant_id=a.tenant_id AND d.id=a.decision_id WHERE a.tenant_id=$1 AND a.id=$2 AND d.principal_id=$3`,
+            [p.tenantId, request.approvalId, p.id],
+          )
+        ).rows[0];
+        if (!row) throw new DomainError(404, 'APPROVAL_NOT_FOUND');
+        const { approvalId: _, ...original } = request;
+        void _;
+        if (
+          digest({ ...original, requestId: row.request_id }) !==
+          row.request_digest
+        )
+          throw new DomainError(409, 'APPROVAL_BINDING_MISMATCH');
+        if (
+          !policy ||
+          policy.version !== row.policy_version ||
+          row.expires_at.getTime() <= Date.now() ||
+          !['PENDING', 'APPROVED'].includes(row.state)
+        )
+          throw new DomainError(403, 'APPROVAL_REQUIRED_OR_EXPIRED');
+        const fresh = await boundedPolicy(this.engine, {
+          tenantId: p.tenantId,
+          principal: p,
+          request: await this.trustedRequest(tx, p, request),
+          policy,
+        });
+        if (fresh.effect === 'DENY')
+          throw new DomainError(403, 'POLICY_REEVALUATION_DENIED');
+        const result = {
+          ...response(row),
+          effect:
+            row.state === 'APPROVED'
+              ? ('ALLOW' as const)
+              : ('REQUIRE_APPROVAL' as const),
+          reasonCodes:
+            row.state === 'APPROVED' ? ['APPROVAL_SATISFIED'] : row.reasons,
+        };
+        await this.remember(
+          tx,
+          p,
+          'evaluate',
+          request.requestId,
+          request,
+          result,
+        );
+        await audit(tx, p.tenantId, 'DECISION', p.id, correlationId, {
+          decisionId: row.id,
+          effect: result.effect,
+          approvalId: row.approval_id,
+        });
+        return result;
+      }
       const result = policy
         ? await boundedPolicy(this.engine, {
-            tenantId: principal.tenantId,
-            principal,
-            request,
+            tenantId: p.tenantId,
+            principal: p,
+            request: await this.trustedRequest(tx, p, request),
             policy,
           })
         : {
@@ -108,13 +224,13 @@ export class Authorization {
         `INSERT INTO decisions(tenant_id,id,request_id,principal_id,agent_id,request_digest,arguments_digest,action,resource_type,resource_id,policy_version,effect,reasons,trace,approval_id,expires_at)
         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
         [
-          principal.tenantId,
+          p.tenantId,
           decisionId,
           request.requestId,
-          principal.id,
+          p.id,
           request.agentId,
           digest(request),
-          digest(request.context.arguments ?? null),
+          request.argumentsDigest ?? 'none',
           request.action,
           request.resource.type,
           request.resource.id,
@@ -130,7 +246,7 @@ export class Authorization {
         await tx.query(
           'INSERT INTO approvals(tenant_id,id,decision_id,state,required_role,prohibit_self,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7)',
           [
-            principal.tenantId,
+            p.tenantId,
             approvalId,
             decisionId,
             'PENDING',
@@ -139,30 +255,23 @@ export class Authorization {
             expiresAt,
           ],
         );
-        await audit(
-          tx,
-          principal.tenantId,
-          'APPROVAL_CREATED',
-          principal.id,
-          correlationId,
-          { approvalId, decisionId },
-        );
-      }
-      await audit(
-        tx,
-        principal.tenantId,
-        'DECISION',
-        principal.id,
-        correlationId,
-        {
+        await audit(tx, p.tenantId, 'APPROVAL_CREATED', p.id, correlationId, {
+          approvalId,
           decisionId,
-          effect: result.effect,
-          reasonCodes: result.reasonCodes,
-          policyVersion: version,
-          requestDigest: digest(request),
-        },
-      );
-      return {
+        });
+      }
+      await audit(tx, p.tenantId, 'DECISION', p.id, correlationId, {
+        decisionId,
+        effect: result.effect,
+        reasonCodes: result.reasonCodes,
+        policyVersion: version,
+        requestDigest: digest(request),
+        requestId: request.requestId,
+        action: request.action,
+        resource: { type: request.resource.type, id: request.resource.id },
+        agentId: request.agentId,
+      });
+      const output = {
         decisionId,
         effect: result.effect,
         reasonCodes: result.reasonCodes,
@@ -170,6 +279,15 @@ export class Authorization {
         approvalId,
         expiresAt: expiresAt.toISOString(),
       };
+      await this.remember(
+        tx,
+        p,
+        'evaluate',
+        request.requestId,
+        request,
+        output,
+      );
+      return output;
     });
   }
   async policy(
@@ -194,154 +312,222 @@ export class Authorization {
         approvalId: row.id,
       });
   }
+  async approvalView(tx: Tx, p: Principal, id: string) {
+    const row = (
+      await tx.query(
+        `SELECT d.*,a.id AS aid,a.state,a.resolved_by,a.resolved_at,aa.action AS resolution_action,aa.comment
+      FROM approvals a JOIN decisions d ON d.tenant_id=a.tenant_id AND d.id=a.decision_id
+      LEFT JOIN LATERAL (SELECT action,comment FROM approval_actions WHERE tenant_id=a.tenant_id AND approval_id=a.id ORDER BY created_at DESC LIMIT 1) aa ON true
+      WHERE a.tenant_id=$1 AND a.id=$2`,
+        [p.tenantId, id],
+      )
+    ).rows[0];
+    if (!row) throw new DomainError(404, 'APPROVAL_NOT_FOUND');
+    const binding = approvalBinding({ ...p, id: row.principal_id }, row);
+    return {
+      approvalId: row.aid,
+      tenantId: p.tenantId,
+      decisionId: row.id,
+      requestId: row.request_id,
+      agentId: row.agent_id,
+      requestingPrincipalId: row.principal_id,
+      action: row.action,
+      resource: {
+        type: row.resource_type,
+        id: row.resource_id,
+        attributes: {},
+      },
+      argumentsDigest:
+        row.arguments_digest === 'none' ? null : row.arguments_digest,
+      bindingDigest: binding,
+      policyVersion: row.policy_version,
+      matchedRuleIds: row.trace,
+      reasonCodes: row.reasons,
+      status: row.state,
+      createdAt: row.created_at.toISOString(),
+      expiresAt: row.expires_at.toISOString(),
+      resolution:
+        row.resolved_by && row.resolution_action
+          ? {
+              decision: row.resolution_action,
+              resolvedBy: row.resolved_by,
+              resolvedAt: row.resolved_at.toISOString(),
+              comment: row.comment ?? null,
+              bindingDigest: binding,
+            }
+          : null,
+    };
+  }
   async resolve(
-    principal: Principal,
-    approvalId: string,
+    p: Principal,
+    id: string,
     input: z.infer<typeof resolutionSchema>,
     correlationId: string,
+    key?: string,
   ) {
-    if (principal.kind !== 'human')
+    if (p.kind !== 'human')
       throw new DomainError(403, 'HUMAN_APPROVER_REQUIRED');
-    return this.store.transaction(principal.tenantId, async (tx) => {
-      await this.store.currentPrincipal(tx, principal);
-      await this.expire(tx, principal.tenantId, correlationId);
+    return this.store.transaction(p.tenantId, async (tx) => {
+      await this.store.currentPrincipal(tx, p);
       const row = (
         await tx.query(
-          `SELECT a.*,d.principal_id,d.policy_version FROM approvals a JOIN decisions d ON d.tenant_id=a.tenant_id AND d.id=a.decision_id
-        WHERE a.tenant_id=$1 AND a.id=$2 FOR UPDATE OF a`,
-          [principal.tenantId, approvalId],
+          `SELECT a.*,d.principal_id,d.policy_version,d.agent_id,d.action,d.resource_type,d.resource_id,d.arguments_digest FROM approvals a JOIN decisions d ON d.tenant_id=a.tenant_id AND d.id=a.decision_id WHERE a.tenant_id=$1 AND a.id=$2 FOR UPDATE OF a`,
+          [p.tenantId, id],
         )
       ).rows[0];
       if (!row) throw new DomainError(404, 'APPROVAL_NOT_FOUND');
-      requireRole(principal, row.required_role);
-      if (row.prohibit_self && row.principal_id === principal.id)
-        throw new DomainError(403, 'SELF_APPROVAL_PROHIBITED');
-      const existing = (
-        await tx.query(
-          'SELECT * FROM approval_actions WHERE tenant_id=$1 AND actor_id=$2 AND request_id=$3',
-          [principal.tenantId, principal.id, input.requestId],
-        )
-      ).rows[0];
-      if (existing) {
-        if (
-          existing.approval_id !== approvalId ||
-          existing.action !== input.action
-        )
-          throw new DomainError(409, 'IDEMPOTENCY_CONFLICT');
-        return { approvalId, state: row.state as string };
-      }
+      requireRole(p, row.required_role);
+      if (row.prohibit_self && row.principal_id === p.id)
+        throw new DomainError(403, 'SELF_APPROVAL_FORBIDDEN');
       if (
-        row.state !== 'PENDING' &&
-        !(row.state === 'APPROVED' && input.action === 'CANCEL')
+        approvalBinding({ ...p, id: row.principal_id }, row) !==
+        input.expectedBindingDigest
       )
-        throw new DomainError(409, 'APPROVAL_NOT_RESOLVABLE');
-      const active = (
-        await tx.query('SELECT active_policy FROM tenants WHERE id=$1', [
-          principal.tenantId,
-        ])
-      ).rows[0];
-      if (active.active_policy !== row.policy_version)
+        throw new DomainError(409, 'APPROVAL_BINDING_MISMATCH');
+      const replay = await this.replay(tx, p, `resolve:${id}`, key, input);
+      if (replay) return replay;
+      if (row.state !== 'PENDING' || row.expires_at.getTime() <= Date.now())
+        throw new DomainError(409, 'APPROVAL_NOT_PENDING');
+      if ((await this.policy(tx, p.tenantId))?.version !== row.policy_version)
         throw new DomainError(409, 'POLICY_VERSION_CHANGED');
-      const state = {
-        APPROVE: 'APPROVED',
-        REJECT: 'REJECTED',
-        CANCEL: 'CANCELLED',
-      }[input.action];
+      const state = input.decision === 'APPROVE' ? 'APPROVED' : 'REJECTED';
       await tx.query(
         'UPDATE approvals SET state=$3,resolved_by=$4,resolved_at=clock_timestamp() WHERE tenant_id=$1 AND id=$2',
-        [principal.tenantId, approvalId, state, principal.id],
+        [p.tenantId, id, state, p.id],
       );
       await tx.query(
-        'INSERT INTO approval_actions(tenant_id,id,approval_id,actor_id,request_id,action) VALUES($1,$2,$3,$4,$5,$6)',
+        'INSERT INTO approval_actions(tenant_id,id,approval_id,actor_id,request_id,action,comment) VALUES($1,$2,$3,$4,$5,$6,$7)',
         [
-          principal.tenantId,
+          p.tenantId,
           randomUUID(),
-          approvalId,
-          principal.id,
-          input.requestId,
-          input.action,
+          id,
+          p.id,
+          key ?? randomUUID(),
+          input.decision,
+          input.comment ?? null,
         ],
       );
-      await audit(
-        tx,
-        principal.tenantId,
-        'APPROVAL_RESOLVED',
-        principal.id,
-        correlationId,
-        { approvalId, state },
-      );
-      return { approvalId, state };
+      await audit(tx, p.tenantId, 'APPROVAL_RESOLVED', p.id, correlationId, {
+        approvalId: id,
+        state,
+      });
+      const output = await this.approvalView(tx, p, id);
+      await this.remember(tx, p, `resolve:${id}`, key, input, output);
+      return output;
     });
   }
   async writePolicy(
-    principal: Principal,
+    p: Principal,
     input: z.infer<typeof policyWriteSchema>,
     correlationId: string,
+    key?: string,
   ) {
-    requireRole(principal, 'policy:admin');
-    let validated = false;
+    requireRole(p, 'policy:admin');
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      validated = await Promise.race([
-        this.engine.validatePolicy(input.document),
-        new Promise<false>((resolve) => {
-          const timer = setTimeout(() => resolve(false), 1500);
-          timer.unref();
-        }),
-      ]);
-    } catch {
+      if (
+        !(await Promise.race([
+          this.engine.validatePolicy(input.document),
+          new Promise<false>((resolve) => {
+            timer = setTimeout(() => resolve(false), 1500);
+          }),
+        ]))
+      )
+        throw new DomainError(422, 'POLICY_INVALID');
+    } catch (error) {
+      if (error instanceof DomainError) throw error;
       throw new DomainError(503, 'POLICY_ENGINE_UNAVAILABLE');
+    } finally {
+      clearTimeout(timer);
     }
-    if (!validated) throw new DomainError(422, 'POLICY_NOT_ACCEPTED');
-    return this.store.transaction(principal.tenantId, async (tx) => {
-      await this.store.currentPrincipal(tx, principal);
-      const existing = (
+    return this.store.transaction(p.tenantId, async (tx) => {
+      await this.store.currentPrincipal(tx, p);
+      const replay = await this.replay(tx, p, 'policy:write', key, input);
+      if (replay) return replay;
+      const old = (
         await tx.query(
-          'SELECT digest FROM policies WHERE tenant_id=$1 AND version=$2',
-          [principal.tenantId, input.version],
+          'SELECT * FROM policy_catalog WHERE tenant_id=$1 AND id=$2',
+          [p.tenantId, input.policyId],
         )
       ).rows[0];
-      if (existing) {
-        if (existing.digest !== digest(input.document))
-          throw new DomainError(409, 'POLICY_VERSION_CONFLICT');
-        return { version: input.version };
-      }
+      if ((old?.latest_version ?? null) !== input.expectedLatestVersion)
+        throw new DomainError(409, 'CONFLICT');
+      const version = Number(old?.latest_version ?? 0) + 1;
       await tx.query(
-        'INSERT INTO policies(tenant_id,version,document,digest,created_by) VALUES($1,$2,$3,$4,$5)',
+        `INSERT INTO policy_catalog(tenant_id,id,name,description,latest_version,active_version) VALUES($1,$2,$3,$4,$5,$6)
+        ON CONFLICT(tenant_id,id) DO UPDATE SET name=excluded.name,description=excluded.description,latest_version=excluded.latest_version,active_version=CASE WHEN $7 THEN excluded.active_version ELSE policy_catalog.active_version END,updated_at=clock_timestamp()`,
         [
-          principal.tenantId,
-          input.version,
-          JSON.stringify(input.document),
-          digest(input.document),
-          principal.id,
+          p.tenantId,
+          input.policyId,
+          input.name,
+          input.description ?? null,
+          version,
+          input.activate ? version : null,
+          input.activate,
         ],
       );
-      await tx.query('UPDATE tenants SET active_policy=$2 WHERE id=$1', [
-        principal.tenantId,
-        input.version,
-      ]);
-      // All outstanding approvals become unusable on policy activation, including a rollback to older semantics.
-      const cancelled = await tx.query(
-        "UPDATE approvals SET state='CANCELLED' WHERE tenant_id=$1 AND state IN ('PENDING','APPROVED') RETURNING id",
-        [principal.tenantId],
+      await tx.query(
+        'INSERT INTO policy_revisions(tenant_id,policy_id,version,document,digest,created_by) VALUES($1,$2,$3,$4,$5,$6)',
+        [
+          p.tenantId,
+          input.policyId,
+          version,
+          JSON.stringify(input.document),
+          publicDigest(input.document),
+          p.id,
+        ],
       );
-      for (const row of cancelled.rows)
-        await audit(
-          tx,
-          principal.tenantId,
-          'APPROVAL_CANCELLED',
-          principal.id,
-          correlationId,
-          { approvalId: row.id, reason: 'POLICY_CHANGED' },
+      if (input.activate) {
+        const active = await tx.query(
+          'SELECT r.policy_id AS "policyId",r.version,r.document FROM policy_catalog c JOIN policy_revisions r ON r.tenant_id=c.tenant_id AND r.policy_id=c.id AND r.version=c.active_version WHERE c.tenant_id=$1 ORDER BY c.id',
+          [p.tenantId],
         );
-      await audit(
-        tx,
-        principal.tenantId,
-        'POLICY_ACTIVATED',
-        principal.id,
-        correlationId,
-        { version: input.version, digest: digest(input.document) },
-      );
-      return { version: input.version };
+        if (active.rows.length > 64)
+          throw new DomainError(422, 'POLICY_SET_LIMIT');
+        const document = { policies: active.rows };
+        const snapshot = `set.${digest(document)}`;
+        await tx.query(
+          'INSERT INTO policies(tenant_id,version,document,digest,created_by) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING',
+          [p.tenantId, snapshot, document, digest(document), p.id],
+        );
+        await tx.query('UPDATE tenants SET active_policy=$2 WHERE id=$1', [
+          p.tenantId,
+          snapshot,
+        ]);
+        const cancelled = await tx.query(
+          "UPDATE approvals SET state='CANCELLED' WHERE tenant_id=$1 AND state IN ('PENDING','APPROVED') RETURNING id",
+          [p.tenantId],
+        );
+        for (const row of cancelled.rows)
+          await audit(
+            tx,
+            p.tenantId,
+            'APPROVAL_CANCELLED',
+            p.id,
+            correlationId,
+            { approvalId: row.id },
+          );
+        await audit(tx, p.tenantId, 'POLICY_ACTIVATED', p.id, correlationId, {
+          policyVersion: snapshot,
+        });
+      }
+      await audit(tx, p.tenantId, 'POLICY_CREATED', p.id, correlationId, {
+        policyId: input.policyId,
+        version,
+        documentDigest: publicDigest(input.document),
+      });
+      const output = {
+        policyId: input.policyId,
+        tenantId: p.tenantId,
+        version,
+        state: input.activate ? 'ACTIVE' : 'DRAFT',
+        documentDigest: publicDigest(input.document),
+        document: input.document,
+        createdBy: p.id,
+        createdAt: new Date().toISOString(),
+      };
+      await this.remember(tx, p, 'policy:write', key, input, output);
+      return output;
     });
   }
 }

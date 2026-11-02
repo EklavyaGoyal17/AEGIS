@@ -13,28 +13,30 @@ export async function migrate(pool: pg.Pool) {
     await client.query(
       'CREATE TABLE IF NOT EXISTS schema_migrations(version text PRIMARY KEY, digest text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())',
     );
-    const source = await readFile(
-      new URL(
-        import.meta.url.includes('/dist/')
-          ? '../../db/001_authorization.sql'
-          : './001_authorization.sql',
-        import.meta.url,
-      ),
-      'utf8',
-    );
-    const digest = createHash('sha256').update(source).digest('hex');
-    const result = await client.query<{ digest: string }>(
-      'SELECT digest FROM schema_migrations WHERE version=$1',
-      ['001'],
-    );
-    if (result.rows[0] && result.rows[0].digest !== digest)
-      throw new Error('Migration checksum mismatch');
-    if (!result.rowCount) {
-      await client.query(source);
-      await client.query(
-        'INSERT INTO schema_migrations(version,digest) VALUES ($1,$2)',
-        ['001', digest],
+    for (const version of ['001_authorization', '002_contract_alignment']) {
+      const source = await readFile(
+        new URL(
+          import.meta.url.includes('/dist/')
+            ? `../../db/${version}.sql`
+            : `./${version}.sql`,
+          import.meta.url,
+        ),
+        'utf8',
       );
+      const digest = createHash('sha256').update(source).digest('hex');
+      const result = await client.query<{ digest: string }>(
+        'SELECT digest FROM schema_migrations WHERE version=$1',
+        [version.slice(0, 3)],
+      );
+      if (result.rows[0] && result.rows[0].digest !== digest)
+        throw new Error('Migration checksum mismatch');
+      if (!result.rowCount) {
+        await client.query(source);
+        await client.query(
+          'INSERT INTO schema_migrations(version,digest) VALUES ($1,$2)',
+          [version.slice(0, 3), digest],
+        );
+      }
     }
     await client.query('COMMIT');
   } catch (error) {

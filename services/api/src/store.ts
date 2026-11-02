@@ -1,6 +1,12 @@
 import pg from 'pg';
 import { randomUUID } from 'node:crypto';
-import { canonical, digest, DomainError, type Principal } from './domain.js';
+import {
+  canonical,
+  digest,
+  publicDigest,
+  DomainError,
+  type Principal,
+} from './domain.js';
 
 export type Tx = pg.PoolClient;
 export const SYSTEM_TENANT = '00000000-0000-0000-0000-000000000000';
@@ -129,6 +135,64 @@ export async function audit(
     seq,
     hash,
   ]);
+  const publicTypes: Record<string, string> = {
+    DECISION: 'DECISION_EVALUATED',
+    APPROVAL_CREATED: 'APPROVAL_REQUESTED',
+    APPROVAL_RESOLVED: 'APPROVAL_RESOLVED',
+    APPROVAL_CONSUMED: 'APPROVAL_CONSUMED',
+    APPROVAL_EXPIRED: 'APPROVAL_EXPIRED',
+    EXECUTION_STARTED: 'EXECUTION_AUTHORIZED',
+    POLICY_CREATED: 'POLICY_CREATED',
+    POLICY_ACTIVATED: 'POLICY_ACTIVATED',
+    AUTHENTICATION_ERROR: 'AUTHENTICATION_FAILED',
+    REQUEST_REJECTED: 'AUTHORIZATION_ERROR',
+  };
+  const publicType = publicTypes[type];
+  if (publicType) {
+    const publicHead = (
+      await tx.query(
+        'SELECT api_audit_seq,api_audit_head FROM tenants WHERE id=$1',
+        [tenantId],
+      )
+    ).rows[0];
+    const unhashed = {
+      eventId: randomUUID(),
+      tenantId,
+      sequence: Number(publicHead.api_audit_seq),
+      occurredAt: event.occurredAt,
+      type: publicType,
+      actor: {
+        kind: actorId ? 'PRINCIPAL' : 'SYSTEM',
+        id: actorId ?? 'system',
+      },
+      requestId: data.requestId ?? null,
+      decisionId: data.decisionId ?? null,
+      approvalId: data.approvalId ?? null,
+      policyVersion: data.policyVersion ?? null,
+      action: data.action ?? null,
+      resource: data.resource ?? null,
+      effect: data.effect ?? null,
+      reasonCodes: data.reasonCodes ?? [],
+      payloadDigest: publicDigest(data),
+      agentId: data.agentId ?? null,
+      previousEventHash: publicHead.api_audit_head,
+      correlationId,
+    };
+    if (!Number.isSafeInteger(unhashed.sequence))
+      throw new Error('Audit sequence exceeds JSON safe integer range');
+    const eventHash = publicDigest({
+      kind: 'aegis.audit-event/v1',
+      event: unhashed,
+    });
+    await tx.query(
+      'INSERT INTO api_audit_events(tenant_id,seq,event) VALUES($1,$2,$3)',
+      [tenantId, publicHead.api_audit_seq, { ...unhashed, eventHash }],
+    );
+    await tx.query(
+      'UPDATE tenants SET api_audit_seq=api_audit_seq+1,api_audit_head=$2 WHERE id=$1',
+      [tenantId, eventHash],
+    );
+  }
 }
 export async function verifyAudit(store: Store, tenantId: string) {
   return store.transaction(tenantId, async (tx) => {
@@ -162,6 +226,40 @@ export async function verifyAudit(store: Store, tenantId: string) {
         tenantId,
       ])
     ).rows[0];
-    return head.audit_seq === seq.toString() && head.audit_head === previous;
+    if (head.audit_seq !== seq.toString() || head.audit_head !== previous)
+      return false;
+    let cursor = -1;
+    let publicPrevious: string | null = null;
+    for (;;) {
+      const rows = await tx.query(
+        'SELECT seq,event FROM api_audit_events WHERE tenant_id=$1 AND seq>$2 ORDER BY seq LIMIT 500',
+        [tenantId, cursor],
+      );
+      if (!rows.rowCount) break;
+      for (const row of rows.rows) {
+        const { eventHash, ...unhashed } = row.event;
+        if (
+          unhashed.tenantId !== tenantId ||
+          unhashed.sequence !== cursor + 1 ||
+          Number(row.seq) !== cursor + 1 ||
+          unhashed.previousEventHash !== publicPrevious ||
+          eventHash !==
+            publicDigest({ kind: 'aegis.audit-event/v1', event: unhashed })
+        )
+          return false;
+        cursor++;
+        publicPrevious = eventHash;
+      }
+    }
+    const publicHead = (
+      await tx.query(
+        'SELECT api_audit_seq,api_audit_head FROM tenants WHERE id=$1',
+        [tenantId],
+      )
+    ).rows[0];
+    return (
+      Number(publicHead.api_audit_seq) === cursor + 1 &&
+      publicHead.api_audit_head === publicPrevious
+    );
   });
 }

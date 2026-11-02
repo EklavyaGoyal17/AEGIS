@@ -114,7 +114,26 @@ for builds and through a source alias for tests.
 - [ ] Contract conformance: all `fixtures/contract-cases.json` cases pass against the live server
 - [ ] Engine fixtures: `packages/policy-engine/fixtures/*.json` produce the expected effects via the HTTP API
 
-## 4. Proposed contract revisions
+## 4. Observed divergences in `agent/codex-backend` (read-only review at `2869183`)
+
+Security reviewed the backend branch without modifying it. These differ from the frozen v1 contract and need
+backend changes (or a recorded contract revision) before integration. Listed most-severe first.
+
+| # | Backend behaviour | Frozen v1 contract | Risk |
+|---|---|---|---|
+| D1 | `context` / `resource.attributes` accept arbitrary nested JSON (`z.json()`) | Flat scalar/list maps, ≤ 64 keys, key pattern | Unbounded input; nested data reaching policy evaluation. The engine adapter rejects it (`INVALID_INPUT`), so such requests will always DENY. |
+| D2 | Arguments digest taken from `context.arguments` (caller-controlled context) with an undomain-separated hex digest | Top-level `argumentsDigest` = `computeArgumentsDigest(args)` (`sha256:` + domain separation) | Digests computed by the SDK / gateway will not match the backend's. |
+| D3 | Resolve body `{ requestId, action: APPROVE\|REJECT\|CANCEL }` | `{ decision, expectedBindingDigest, comment? }` | Without `expectedBindingDigest` an approver can be shown one request and approve another (TOCTOU). |
+| D4 | Policy write body `{ version, document }` with client-chosen version string | `CreatePolicyRequest` with `policyId`, `expectedLatestVersion`, server-assigned versions | Client-chosen versions can collide or be replayed; no optimistic concurrency. |
+| D5 | `action` regex `^[a-z][a-z0-9_.-]{1,127}$` | Dotted `resource.operation` with 2–5 segments | Single-segment and `..` actions accepted; wildcard matching assumes segments. |
+| D6 | Local `canonical()` accepts `undefined` values / non-plain objects silently | `canonicalJson` rejects them | Two semantically different bodies can hash equal (idempotency, audit). Prefer importing `canonicalJson`/`sha256Digest` from `@aegis/contracts`. |
+| D7 | Approval TTL limited to the decision `ttlSeconds` (≤ 300 s) | Approval TTL 60 s – 7 days, decision TTL ≤ 300 s | Approvals expire before humans can act. The adapter currently clamps to 300 s. |
+
+The adapter `createBackendPolicyEngine` in `@aegis/policy-engine` implements the backend's `PolicyEngine`
+interface as it exists today, so the backend can switch from `UnavailablePolicyEngine` without waiting for
+the above; D1–D3 should be fixed before any production use.
+
+## 5. Proposed contract revisions
 
 None yet. Template:
 

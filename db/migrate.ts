@@ -13,16 +13,22 @@ export async function migrate(pool: pg.Pool) {
     await client.query(
       'CREATE TABLE IF NOT EXISTS schema_migrations(version text PRIMARY KEY, digest text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())',
     );
-    for (const version of ['001_authorization', '002_contract_alignment']) {
-      const source = await readFile(
-        new URL(
-          import.meta.url.includes('/dist/')
-            ? `../../db/${version}.sql`
-            : `./${version}.sql`,
-          import.meta.url,
-        ),
-        'utf8',
-      );
+    for (const version of [
+      '001_authorization',
+      '002_contract_alignment',
+      '003_runtime_locks',
+    ]) {
+      const source = (
+        await readFile(
+          new URL(
+            import.meta.url.includes('/dist/')
+              ? `../../db/${version}.sql`
+              : `./${version}.sql`,
+            import.meta.url,
+          ),
+          'utf8',
+        )
+      ).replace(/\r\n/g, '\n');
       const digest = createHash('sha256').update(source).digest('hex');
       const result = await client.query<{ digest: string }>(
         'SELECT digest FROM schema_migrations WHERE version=$1',
@@ -46,11 +52,21 @@ export async function migrate(pool: pg.Pool) {
     client.release();
   }
 }
+export async function grantRuntime(pool: pg.Pool) {
+  const path = new URL(
+    import.meta.url.includes('/dist/')
+      ? '../../db/grant-runtime.sql'
+      : './grant-runtime.sql',
+    import.meta.url,
+  );
+  await pool.query(await readFile(path, 'utf8'));
+}
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL required');
   const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
   try {
     await migrate(pool);
+    if (process.env.GRANT_RUNTIME_ROLE === 'true') await grantRuntime(pool);
   } finally {
     await pool.end();
   }

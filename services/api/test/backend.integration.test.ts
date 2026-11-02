@@ -824,3 +824,84 @@ test('server metadata overrides caller resource claims before policy evaluation'
   expect((await evaluate(body)).json().effect).toBe('DENY');
   expect(observed).toEqual({ sensitivity: 'restricted', recordCount: 20000 });
 });
+
+test('post-effect database failure recovers conservatively without repeating the tool', async () => {
+  const { maintenance } = await import('../src/maintenance.js');
+  mode = 'ALLOW';
+  const body = request();
+  const decision = (await evaluate(body)).json();
+  await pool.query(
+    `CREATE FUNCTION injected_outcome_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.event->>'type'='EXECUTION_OUTCOME' THEN RAISE EXCEPTION 'injected outcome failure'; END IF; RETURN NEW; END; $$;CREATE TRIGGER injected_failure BEFORE INSERT ON audit_events FOR EACH ROW EXECUTE FUNCTION injected_outcome_failure()`,
+  );
+  try {
+    expect((await execute(decision.decisionId, body)).statusCode).toBe(503);
+  } finally {
+    await pool.query(
+      'DROP TRIGGER injected_failure ON audit_events; DROP FUNCTION injected_outcome_failure()',
+    );
+  }
+  expect(await count('demo_notes')).toBe(1);
+  expect(
+    (
+      await pool.query('SELECT state FROM executions WHERE tenant_id=$1', [
+        tenant,
+      ])
+    ).rows[0].state,
+  ).toBe('STARTED');
+  await pool.query(
+    "UPDATE executions SET created_at=now()-interval '2 minutes' WHERE tenant_id=$1",
+    [tenant],
+  );
+  await maintenance(authorization);
+  expect((await execute(decision.decisionId, body)).json().state).toBe(
+    'UNKNOWN',
+  );
+  expect(await count('demo_notes')).toBe(1);
+});
+
+test('runtime role cannot rewrite evidence, change identities or bypass database triggers', async () => {
+  const { grantRuntime } = await import('../../../db/migrate.js');
+  await pool.query(
+    'CREATE ROLE aegis_app NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE',
+  );
+  await grantRuntime(pool);
+  const client = await pool.connect();
+  try {
+    await client.query('SET ROLE aegis_app');
+    await expect(
+      client.query('ALTER TABLE audit_events DISABLE TRIGGER audit_immutable'),
+    ).rejects.toThrow();
+    await expect(
+      client.query('DELETE FROM audit_events WHERE tenant_id=$1', [tenant]),
+    ).rejects.toThrow();
+    await expect(
+      client.query('UPDATE principals SET disabled=true WHERE tenant_id=$1', [
+        tenant,
+      ]),
+    ).rejects.toThrow();
+    expect(
+      (
+        await client.query('SELECT id FROM principals WHERE tenant_id=$1', [
+          tenant,
+        ])
+      ).rowCount,
+    ).toBe(2);
+  } finally {
+    await client.query('RESET ROLE');
+    client.release();
+  }
+});
+
+test('gateway recomputes digest from actual arguments', async () => {
+  mode = 'ALLOW';
+  const body = request();
+  const decision = (await evaluate(body)).json();
+  expect(
+    (
+      await execute(decision.decisionId, body, {
+        text: 'changed independently of request digest',
+      })
+    ).statusCode,
+  ).toBe(403);
+  expect(await count('demo_notes')).toBe(0);
+});

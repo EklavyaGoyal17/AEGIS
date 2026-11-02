@@ -145,10 +145,10 @@ export class Gateway {
       if (decision.effect === 'DENY')
         throw new DomainError(403, 'DECISION_DENIED');
       const connector = (
-        await tx.query(
-          'SELECT id FROM connectors WHERE tenant_id=$1 AND id=$2 AND adapter=$2 AND enabled FOR SHARE',
-          [principal.tenantId, this.adapter.id],
-        )
+        await tx.query('SELECT id FROM lock_connector($1,$2)', [
+          principal.tenantId,
+          this.adapter.id,
+        ])
       ).rows[0];
       if (!connector) throw new DomainError(403, 'CONNECTOR_DISABLED');
       if (
@@ -198,7 +198,7 @@ export class Gateway {
         // Revoking the human approver's authority also invalidates an unconsumed approval.
         const approver = (
           await tx.query(
-            'SELECT id FROM principals WHERE tenant_id=$1 AND id=$2 AND NOT disabled AND kind=$3 AND $4=ANY(roles) FOR SHARE',
+            'SELECT id FROM lock_principal($1,$2) WHERE kind=$3 AND $4=ANY(roles)',
             [
               principal.tenantId,
               approval.resolved_by,

@@ -11,9 +11,33 @@ jobs:
         with:
           node-version: 24
           cache: npm
+      - run: npm install --global npm@11.8.0
       - run: npm ci
       - run: npm run format:check
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
+      - uses: actions/checkout@v4
+        with:
+          ref: 69d658f8b93914cfd67f86d4a13f61cbc5f6de0e
+          path: .backend-tmp/canonical
+      - run: npm run test:integration
+        env:
+          AEGIS_CONTRACT_SCHEMA: .backend-tmp/canonical/packages/contracts/schemas/aegis-v1.schema.json
+      - run: npm audit --omit=dev --audit-level=moderate
+      - run: npm audit --audit-level=high
       - run: npm run build
+      - run: npm run dev:init
+      - run: docker compose --env-file .backend-tmp/compose.env -f infra/compose.yaml up --build -d --wait
+      - run: npm run smoke
+      - if: always()
+        run: docker compose --env-file .backend-tmp/compose.env -f infra/compose.yaml down
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -56,10 +56,10 @@ export class Store {
     };
   }
   async currentPrincipal(tx: Tx, principal: Principal) {
-    const result = await tx.query(
-      'SELECT * FROM principals WHERE tenant_id=$1 AND id=$2 AND NOT disabled FOR SHARE',
-      [principal.tenantId, principal.id],
-    );
+    const result = await tx.query('SELECT * FROM lock_principal($1,$2)', [
+      principal.tenantId,
+      principal.id,
+    ]);
     const row = result.rows[0];
     if (!row) throw new DomainError(401, 'PRINCIPAL_DISABLED');
     // Compare the snapshot so a privilege revocation between authentication and mutation fails closed.
@@ -79,10 +79,7 @@ export class Store {
   ) {
     await this.currentPrincipal(tx, principal);
     const grant = await tx.query(
-      `SELECT d.id FROM delegations d JOIN agents a ON a.tenant_id=d.tenant_id AND a.id=d.agent_id
-      WHERE d.tenant_id=$1 AND d.principal_id=$2 AND d.agent_id=$3 AND NOT a.disabled
-      AND d.revoked_at IS NULL AND d.expires_at>clock_timestamp() AND $4=ANY(d.actions) AND $5=ANY(d.resource_types)
-      FOR SHARE OF d,a`,
+      'SELECT id FROM lock_delegation($1,$2,$3,$4,$5)',
       [principal.tenantId, principal.id, agentId, action, resourceType],
     );
     if (!grant.rowCount) throw new DomainError(403, 'DELEGATION_REQUIRED');

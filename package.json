@@ -20,7 +20,10 @@
     "format:check": "prettier --check .",
     "test": "vitest run --exclude '**/*.integration.test.ts'",
     "test:integration": "vitest run services/api/test/backend.integration.test.ts",
-    "db:migrate": "tsx db/migrate.ts"
+    "db:migrate": "tsx db/migrate.ts",
+    "dev:init": "tsx infra/dev-init.ts",
+    "dev:seed": "tsx infra/seed.ts",
+    "smoke": "tsx infra/smoke.ts"
   },
   "dependencies": {
     "@fastify/rate-limit": "^11.2.1",

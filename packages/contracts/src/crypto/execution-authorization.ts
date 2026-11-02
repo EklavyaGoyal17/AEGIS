@@ -35,6 +35,8 @@ export const ExecutionAuthorizationClaims = Type.Object(
     act: ActionName,
     res: ResourceKey,
     args: Type.Union([Sha256Digest, Type.Null()]),
+    // computeAttributesDigest(caller-claimed resource.attributes) — lets the gateway check claims against args.
+    att: Sha256Digest,
     dec: Uuid,
     apr: Type.Union([Uuid, Type.Null()]),
     pv: Type.String({ minLength: 1, maxLength: 128 }),
@@ -114,6 +116,11 @@ export interface ExpectedExecution {
   readonly argumentsDigest: string | null;
   /** If set, the token must have been issued on behalf of this principal. */
   readonly principalId?: string;
+  /**
+   * computeAttributesDigest(attributes re-derived by the gateway from the actual arguments). Set it for any
+   * tool whose policy depends on caller-claimed attributes; it proves the claims evaluated match the call.
+   */
+  readonly attributesDigest?: string;
 }
 
 export interface VerifyOptions {
@@ -196,6 +203,7 @@ export async function verifyExecutionAuthorization(token: unknown, options: Veri
       ['res.id', claims.res.id === e.resource.id],
       ['args', claims.args === e.argumentsDigest],
       ['prn', e.principalId === undefined || claims.prn === e.principalId],
+      ['att', e.attributesDigest === undefined || claims.att === e.attributesDigest],
     ];
     const bad = mismatches.find(([, ok]) => !ok);
     if (bad) return { ok: false, reason: 'BINDING_MISMATCH', field: bad[0] };

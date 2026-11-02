@@ -61,11 +61,15 @@ for builds and through a source alias for tests.
 ### 1.5 Execution authorization (for protected tools)
 - For actions configured as protected, require `argumentsDigest` in the evaluate request (400 otherwise).
 - On ALLOW, mint with `mintExecutionAuthorization` (Ed25519 key from KMS/HSM, `kid` rotation, lifetime ≤ 60 s
-  recommended, ≤ 300 s hard cap) and return it as `executionAuthorization`.
+  recommended, ≤ 300 s hard cap) and return it as `executionAuthorization`. Set
+  `att = computeAttributesDigest(request.resource.attributes)` over the attributes **as received** (before the
+  server-owned merge).
 - The gateway / tool adapter in front of the protected system MUST call `verifyExecutionAuthorization` with:
   its own audience id, the tenant from its own auth context, `computeArgumentsDigest(actualArguments)`,
-  a **shared atomic** replay store (Redis `SET NX EX` or a unique DB row), and a revocation hook (agent
-  suspended, grant revoked). Only then may it resolve the `CredentialReference` and call the downstream system.
+  a **shared atomic** replay store (Redis `SET NX EX` or a unique DB row), a revocation hook (agent
+  suspended, grant revoked), and — for every tool whose policy reads caller-claimed attributes — a
+  `deriveAttributes(args)` function shared with the agent-side tool definition. Only then may it resolve the
+  `CredentialReference` and call the downstream system.
 - See `docs/security/execution-authorization.md`.
 
 ### 1.6 Policies

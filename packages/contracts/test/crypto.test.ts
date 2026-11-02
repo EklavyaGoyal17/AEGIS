@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { AuditEvent } from '../src/index.js';
 import {
   computeApprovalBindingDigest,
+  computeAttributesDigest,
   computeArgumentsDigest,
   computeAuditEventHash,
   InMemoryReplayStore,
@@ -29,6 +30,7 @@ const claims: MintClaimsInput = {
   act: 'crm.customers.export',
   res: { type: 'crm.customer_table', id: 'customers' },
   args: computeArgumentsDigest(args),
+  att: computeAttributesDigest({ recordCount: 10 }),
   dec: '7b6a5948-3726-4154-a3b2-c1d0e9f8a7b6',
   apr: null,
   pv: 'r1.abc',
@@ -88,6 +90,7 @@ describe('execution authorization', () => {
     ['resource id', { resource: { type: 'crm.customer_table', id: 'vip' } }, 'res.id'],
     ['arguments', { argumentsDigest: computeArgumentsDigest({ ...args, limit: 1_000_000 }) }, 'args'],
     ['arguments missing', { argumentsDigest: null }, 'args'],
+    ['claimed attributes (gateway re-derived a different recordCount)', { attributesDigest: computeAttributesDigest({ recordCount: 15000 }) }, 'att'],
   ])('rejects a %s binding mismatch', async (_label, change, field) => {
     const result = await verifyExecutionAuthorization(mint(), opts({ expected: { ...expected, ...change } }));
     expect(result).toEqual({ ok: false, reason: 'BINDING_MISMATCH', field });

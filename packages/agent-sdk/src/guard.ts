@@ -28,6 +28,11 @@ export interface ProtectedActionRequest<A> {
   readonly approvalId?: string;
   /** Override for deterministic tests; a fresh UUID is used by default. */
   readonly requestId?: string;
+  /**
+   * Derives resource.attributes from the args (the same function the trusted gateway uses to verify them).
+   * When set, it replaces resource.attributes so claims cannot drift from the arguments.
+   */
+  readonly deriveAttributes?: (args: Readonly<A>) => Attributes;
 }
 
 export interface AuthorizedExecution<A> {
@@ -75,9 +80,11 @@ export class AegisGuard {
   async authorize<A>(req: ProtectedActionRequest<A>, opts: CallOptions = {}): Promise<AuthorizedExecution<A>> {
     let snapshot: A;
     let argumentsDigest: string;
+    let resource = req.resource;
     try {
       snapshot = deepFreeze(structuredClone(req.args));
       argumentsDigest = computeArgumentsDigest(snapshot);
+      if (req.deriveAttributes) resource = { ...req.resource, attributes: req.deriveAttributes(snapshot) };
     } catch (err) {
       const why = err instanceof CanonicalizationError ? err.message : 'arguments are not plain JSON data';
       throw new AegisValidationError(`tool arguments cannot be authorized: ${why}`, []);
@@ -88,7 +95,7 @@ export class AegisGuard {
         requestId: req.requestId ?? this.uuid(),
         agentId: req.agentId,
         action: req.action,
-        resource: req.resource,
+        resource,
         context: req.context ?? {},
         argumentsDigest,
         ...(req.approvalId !== undefined ? { approvalId: req.approvalId } : {}),

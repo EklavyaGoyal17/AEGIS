@@ -16,6 +16,15 @@ export function computeArgumentsDigest(args: unknown): Sha256Digest {
   return sha256Digest({ kind: 'aegis.arguments/v1', args });
 }
 
+/**
+ * Digest of the caller-claimed `resource.attributes` exactly as sent in the evaluate request. It is bound
+ * into execution authorizations (`att`) so a trusted gateway can re-derive the attributes from the actual
+ * arguments (e.g. recordCount from limit) and prove the policy evaluated the truth.
+ */
+export function computeAttributesDigest(attributes: Readonly<Record<string, unknown>>): Sha256Digest {
+  return sha256Digest({ kind: 'aegis.claimed-attributes/v1', attributes });
+}
+
 export interface ApprovalBindingInput {
   readonly tenantId: string;
   readonly agentId: string;

@@ -1,6 +1,8 @@
 import type { KeyObject } from 'node:crypto';
+import type { Attributes } from '@aegis/contracts';
 import {
   computeArgumentsDigest,
+  computeAttributesDigest,
   verifyExecutionAuthorization,
   type ExecutionAuthorizationClaims,
   type ReplayStore,
@@ -37,6 +39,13 @@ export interface ProtectedCall<A> {
   readonly resource: { readonly type: string; readonly id: string };
   readonly args: A;
   readonly principalId?: string;
+  /**
+   * Re-derives the policy-relevant attributes (e.g. recordCount, destination class) from the arguments
+   * actually being executed. Must be the same function the agent side used to build resource.attributes.
+   * Strongly recommended whenever the policy reads caller-claimed attributes; without it a lying agent can
+   * claim a harmless recordCount while passing harmful arguments.
+   */
+  readonly deriveAttributes?: (args: Readonly<A>) => Attributes;
 }
 
 export function createEnforcementPoint(options: EnforcementPointOptions) {
@@ -51,9 +60,11 @@ export function createEnforcementPoint(options: EnforcementPointOptions) {
     ): Promise<R> {
       let snapshot: A;
       let argumentsDigest: string;
+      let attributesDigest: string | undefined;
       try {
         snapshot = Object.freeze(structuredClone(call.args));
         argumentsDigest = computeArgumentsDigest(snapshot);
+        if (call.deriveAttributes) attributesDigest = computeAttributesDigest(call.deriveAttributes(snapshot));
       } catch {
         throw new AegisExecutionRejectedError('INVALID_ARGUMENTS');
       }
@@ -68,6 +79,7 @@ export function createEnforcementPoint(options: EnforcementPointOptions) {
           resource: call.resource,
           argumentsDigest,
           ...(call.principalId !== undefined ? { principalId: call.principalId } : {}),
+          ...(attributesDigest !== undefined ? { attributesDigest } : {}),
         },
         ...(options.isRevoked ? { isRevoked: options.isRevoked } : {}),
         ...(options.now ? { now: options.now() } : {}),

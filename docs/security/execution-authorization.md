@@ -31,6 +31,7 @@ A compact JWS (`header.payload.signature`, base64url, no padding):
 | `act` | exact action |
 | `res` | `{type, id}` |
 | `args` | `computeArgumentsDigest(arguments)` or null for argument-less actions |
+| `att` | `computeAttributesDigest(resource.attributes)` exactly as the caller sent them (before server merge) |
 | `dec` | decision id (audit link) |
 | `apr` | approval id consumed to obtain this ALLOW, or null |
 | `pv` | policy version used |
@@ -49,11 +50,25 @@ Signing input is `b64url(canonicalJson(header)) + "." + b64url(canonicalJson(cla
 5. Lifetime cap, `nbf`/`exp` with bounded skew (default 30 s).
 6. Audience, then every binding against **what the enforcement point is about to do**: tenant from its own
    auth context, agent, action, resource, arguments digest recomputed from the actual arguments, optionally
-   principal.
+   principal, and — when the tool defines `deriveAttributes(args)` — the digest of the attributes re-derived
+   from the actual arguments (`att`).
 7. Revocation hook.
 8. Atomic consume of `jti` in a shared replay store (last, so failed probes do not burn tokens).
 
 Every failure returns a typed reason; exceptions return `VERIFIER_ERROR`. The function never throws.
+
+## Claimed attributes vs. actual arguments (`att`)
+
+Policies often depend on properties of the operation (`recordCount`, `destination`) that only the caller
+knows when asking. They arrive as caller-claimed `resource.attributes`. `args` proves which arguments were
+authorized, but not that the claims describe those arguments: an agent could claim `recordCount: 500` while
+the arguments export 15,000 rows, and both digests would be internally consistent.
+
+Mitigation: each protected tool defines a pure `deriveAttributes(args)` shared by the agent side
+(`AegisGuard`, `deriveAttributes` option) and the gateway (`createEnforcementPoint().execute`, `deriveAttributes`).
+The token carries `att`; the gateway recomputes it from the arguments it will execute and rejects a mismatch
+(`BINDING_MISMATCH`, field `att`). Gateways that omit `deriveAttributes` cannot detect lying claims — this is
+pinned by a test (`agent-sdk/test/abuse.test.ts`, "LIMITATION").
 
 ## Approval binding
 

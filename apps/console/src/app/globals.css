@@ -1,0 +1,83 @@
+@import "tailwindcss";
+
+/*
+ * AEGIS Design System — Security Operations Console
+ * Enterprise color palette for trust, clarity, and seriousness
+ */
+
+@theme {
+  /* Core brand */
+  --color-aegis-50: #eff6ff;
+  --color-aegis-100: #dbeafe;
+  --color-aegis-200: #bfdbfe;
+  --color-aegis-300: #93c5fd;
+  --color-aegis-400: #60a5fa;
+  --color-aegis-500: #3b82f6;
+  --color-aegis-600: #2563eb;
+  --color-aegis-700: #1d4ed8;
+  --color-aegis-800: #1e40af;
+  --color-aegis-900: #1e3a8a;
+  --color-aegis-950: #172554;
+
+  /* Surface — dark mode first for security ops */
+  --color-surface-0: #09090b;
+  --color-surface-50: #0f0f12;
+  --color-surface-100: #18181b;
+  --color-surface-200: #27272a;
+  --color-surface-300: #3f3f46;
+  --color-surface-400: #52525b;
+  --color-surface-500: #71717a;
+  --color-surface-600: #a1a1aa;
+  --color-surface-700: #d4d4d8;
+  --color-surface-800: #e4e4e7;
+  --color-surface-900: #f4f4f5;
+  --color-surface-950: #fafafa;
+
+  /* Semantic status */
+  --color-status-allow: #22c55e;
+  --color-status-allow-muted: #166534;
+  --color-status-deny: #ef4444;
+  --color-status-deny-muted: #991b1b;
+  --color-status-pending: #f59e0b;
+  --color-status-pending-muted: #92400e;
+  --color-status-info: #3b82f6;
+  --color-status-info-muted: #1e40af;
+
+  /* Typography */
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Code", monospace;
+}
+
+/* Base layer */
+@layer base {
+  :root {
+    color-scheme: dark;
+    --radius: 0.5rem;
+  }
+
+  body {
+    @apply bg-surface-0 text-surface-700 antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  /* Focus ring for accessibility */
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-aegis-500;
+  }
+
+  /* Scrollbar styling for the ops console feel */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-surface-50;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-surface-300 rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-surface-400;
+  }
+}
+

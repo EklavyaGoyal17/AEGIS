@@ -1,8 +1,31 @@
+# Dependencies & build output
 node_modules/
 dist/
-coverage/
+out/
+.next/
+*.tsbuildinfo
+next-env.d.ts
+
+# Local secrets and state (never commit)
 .env
 .env.*
 !.env.example
-*.log
 .backend-tmp/
+
+# Logs, coverage and test output
+*.log
+coverage/
+test-results/
+playwright-report/
+
+# Peer agent worktrees
+AEGIS-claude/
+AEGIS-codex/
+AEGIS-antigravity/
+AEGIS-integration/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

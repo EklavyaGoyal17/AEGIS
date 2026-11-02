@@ -1,29 +1,44 @@
 {
   "name": "aegis",
+  "version": "0.1.0",
   "private": true,
+  "description": "AEGIS — authorization and runtime enforcement for autonomous AI agents",
   "type": "module",
   "engines": {
     "node": ">=24 <25"
   },
   "packageManager": "npm@11.8.0",
   "workspaces": [
+    "packages/contracts",
+    "packages/policy-engine",
+    "packages/agent-sdk",
     "services/*",
-    "packages/*",
     "apps/*"
   ],
   "scripts": {
+    "build:packages": "npm run build -w @aegis/contracts && npm run build -w @aegis/policy-engine && npm run build -w @aegis/agent-sdk",
+    "build:services": "tsc -p tsconfig.build.json",
+    "build:console": "npm run build -w @aegis/console",
+    "build": "npm run build:packages && npm run build:services",
     "dev": "tsx services/api/src/main.ts",
-    "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc --noEmit",
+    "dev:gateway": "tsx services/gateway/src/main.ts",
+    "dev:tool": "tsx services/demo-tool/src/main.ts",
+    "dev:console": "npm run dev -w @aegis/console",
+    "typecheck": "tsc --noEmit && npm run typecheck -w @aegis/contracts -w @aegis/policy-engine -w @aegis/agent-sdk -w @aegis/console -w @aegis/demo-agent",
     "lint": "eslint services db infra --no-error-on-unmatched-pattern",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "vitest run --exclude '**/*.integration.test.ts'",
+    "test": "vitest run --exclude '**/*.integration.test.ts' && npm run test:packages && npm run test -w @aegis/console",
+    "test:packages": "npm test -w @aegis/contracts -w @aegis/policy-engine -w @aegis/agent-sdk",
+    "test:contracts": "npm run check:generated -w @aegis/contracts",
+    "test:mutation": "npm run mutation -w @aegis/policy-engine",
     "test:integration": "vitest run services/api/test/backend.integration.test.ts",
+    "test:e2e": "playwright test --config=tests/e2e/playwright.config.ts",
     "db:migrate": "tsx db/migrate.ts",
     "dev:init": "tsx infra/dev-init.ts",
     "dev:seed": "tsx infra/seed.ts",
-    "smoke": "tsx infra/smoke.ts"
+    "smoke": "tsx infra/smoke.ts",
+    "demo": "npm run demo -w @aegis/demo-agent"
   },
   "dependencies": {
     "@fastify/rate-limit": "^11.2.1",
@@ -38,6 +53,7 @@
   },
   "devDependencies": {
     "@apidevtools/swagger-parser": "^13.1.0",
+    "@playwright/test": "^1.56.0",
     "@testcontainers/postgresql": "^12.2.1",
     "@types/node": "^26.6.6",
     "@types/pg": "^8.23.1",
